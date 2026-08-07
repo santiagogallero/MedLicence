@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { motion } from 'framer-motion'
 import type { LeaveStatus } from './api'
 import { STATUS_META } from './format'
 
@@ -31,5 +32,14 @@ export function ProcessingPanel({ messages }: { messages: string[] }) {
 }
 
 export function ErrorNote({ message }: { message: string }) {
-  return <div className="inline-error">{message}</div>
+  return (
+    <motion.div
+      className="inline-error"
+      initial={{ opacity: 0, y: -6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+    >
+      {message}
+    </motion.div>
+  )
 }

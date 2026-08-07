@@ -9,7 +9,7 @@ import {
   type LeaveRequest,
   type LicenseType,
 } from './api'
-import { LICENSE_TYPE_LABELS } from './format'
+import { LICENSE_TYPE_LABELS, SCREEN_ENTER_FROM, SCREEN_ENTER_TO, SCREEN_TRANSITION } from './format'
 import { ErrorNote, ProcessingPanel } from './shared'
 import './App.css'
 
@@ -207,8 +207,9 @@ function DoctorPortal() {
         <div className="worker-content">
           <motion.article
             className="panel worker-panel doctor-gate"
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={SCREEN_ENTER_FROM}
+            animate={SCREEN_ENTER_TO}
+            transition={SCREEN_TRANSITION}
           >
             <div className="panel-content">
               <span className="company-scan-icon">
@@ -276,7 +277,12 @@ function DoctorPortal() {
         </span>
       </header>
 
-      <div className="worker-content wide">
+      <motion.div
+        className="worker-content wide"
+        initial={SCREEN_ENTER_FROM}
+        animate={SCREEN_ENTER_TO}
+        transition={SCREEN_TRANSITION}
+      >
         <div className="diagnosis-banner">
           <EyeOff size={16} />
           Vos completás el período y el diagnóstico acá — nadie más los
@@ -301,7 +307,7 @@ function DoctorPortal() {
             />
           ))}
         </div>
-      </div>
+      </motion.div>
     </main>
   )
 }

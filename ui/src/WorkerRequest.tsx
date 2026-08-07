@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Check, HeartPulse, Laptop, ShieldCheck } from 'lucide-react'
 import { ApiError, getLeaveRequest, type LeaveRequest } from './api'
-import { formatPeriod } from './format'
+import { SCREEN_ENTER_FROM, SCREEN_ENTER_TO, SCREEN_TRANSITION, formatPeriod } from './format'
 import { ErrorNote, ProcessingPanel, StatusBadge } from './shared'
 import './App.css'
 
@@ -81,9 +81,9 @@ function WorkerRequest({ token }: { token: string }) {
         {!loading && !loadError && request && (
           <motion.article
             className="panel worker-panel"
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
+            initial={SCREEN_ENTER_FROM}
+            animate={SCREEN_ENTER_TO}
+            transition={SCREEN_TRANSITION}
           >
             <div className="panel-heading">
               <div>
@@ -107,8 +107,20 @@ function WorkerRequest({ token }: { token: string }) {
               )}
 
               {request.status === 'proven' && (
-                <div className="success-banner">
-                  <Check size={20} />
+                <motion.div
+                  className="success-banner"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={SCREEN_TRANSITION}
+                >
+                  <motion.span
+                    className="success-icon"
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 15, delay: 0.1 }}
+                  >
+                    <Check size={20} strokeWidth={3} />
+                  </motion.span>
                   <div>
                     <strong>Certificado listo</strong>
                     <span>
@@ -116,19 +128,31 @@ function WorkerRequest({ token }: { token: string }) {
                       ya puede confirmarla — vos no tenés que hacer nada más.
                     </span>
                   </div>
-                </div>
+                </motion.div>
               )}
 
               {request.status === 'verified' && (
-                <div className="success-banner">
-                  <Check size={20} />
+                <motion.div
+                  className="success-banner"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={SCREEN_TRANSITION}
+                >
+                  <motion.span
+                    className="success-icon"
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 15, delay: 0.1 }}
+                  >
+                    <Check size={20} strokeWidth={3} />
+                  </motion.span>
                   <div>
                     <strong>Tu empresa confirmó el certificado</strong>
                     <span>
                       Período: {formatPeriod(request.periodStart, request.periodEnd)}
                     </span>
                   </div>
-                </div>
+                </motion.div>
               )}
             </div>
           </motion.article>
