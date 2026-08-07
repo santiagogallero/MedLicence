@@ -13,7 +13,7 @@
   },
   "scripts": {
     "compact": "cd contract && compact compile src/medlicense.compact build",
-    "dev": "npm run dev --workspace=@medlicense/ui",
+    "dev": "npm run dev --workspace=ui",
     "cli": "npm run start --workspace=@medlicense/cli",
     "typecheck": "tsc -b --pretty"
   },
