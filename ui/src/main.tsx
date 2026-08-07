@@ -1,13 +1,23 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import App from './App.tsx'
+import Landing from './Landing.tsx'
 import CompanyPortal from './CompanyPortal.tsx'
+import DoctorPortal from './DoctorPortal.tsx'
+import WorkerRequest from './WorkerRequest.tsx'
 
-const isCompanyPortal = window.location.hash.startsWith('#/empresa')
+function resolveRoute() {
+  const hash = window.location.hash
+
+  if (hash.startsWith('#/empresa')) return <CompanyPortal />
+  if (hash.startsWith('#/medico')) return <DoctorPortal />
+
+  const workerMatch = hash.match(/^#\/solicitud\/([^/]+)/)
+  if (workerMatch) return <WorkerRequest token={decodeURIComponent(workerMatch[1])} />
+
+  return <Landing />
+}
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    {isCompanyPortal ? <CompanyPortal /> : <App />}
-  </StrictMode>,
+  <StrictMode>{resolveRoute()}</StrictMode>,
 )
