@@ -36,7 +36,7 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
     private readonly unshieldedKeystore: UnshieldedKeystore,
   ) {}
 
-  /** Dirección bech32m (`mn_addr_preprod...`) — la que pide el faucet de tNIGHT. */
+  /** Dirección bech32m (`mn_addr_preview...`) — la que pide el faucet de tNIGHT. */
   get unshieldedAddress(): string {
     return this.unshieldedKeystore.getBech32Address().asString();
   }
@@ -68,6 +68,46 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
 
   async stop(): Promise<void> {
     return this.wallet.stop();
+  }
+
+  /**
+   * NIGHT no genera DUST solo: hay que registrar las UTXOs con una tx
+   * explícita, y esperar (~1-2 min) a que la red la procese. Sin esto,
+   * cualquier operación falla con "Insufficient Funds: could not balance
+   * dust" aunque la wallet ya tenga tNIGHT del faucet.
+   */
+  async ensureDustGenerated(): Promise<void> {
+    let state = await this.wallet.waitForSyncedState();
+
+    if (state.dust.availableCoins.length === 0) {
+      const unregistered = state.unshielded.availableCoins.filter(
+        (coin) => coin.meta?.registeredForDustGeneration !== true,
+      );
+      if (unregistered.length === 0) {
+        this.logger.warn('No hay NIGHT disponible para registrar — ¿ya cargaste el faucet?');
+      } else {
+        this.logger.info(`Registrando ${unregistered.length} UTXO(s) de NIGHT para generación de DUST...`);
+        const recipe = await this.wallet.registerNightUtxosForDustGeneration(
+          unregistered,
+          this.unshieldedKeystore.getPublicKey(),
+          (payload) => this.unshieldedKeystore.signData(payload),
+        );
+        const finalized = await this.wallet.finalizeRecipe(recipe);
+        const txId = await this.wallet.submitTransaction(finalized);
+        this.logger.info(`Registro de DUST sometido: ${txId}`);
+      }
+    }
+
+    this.logger.info('Esperando a que se genere DUST (puede tardar 1-2 minutos)...');
+    while (true) {
+      state = await this.wallet.waitForSyncedState();
+      const dustBalance = state.dust.balance(new Date());
+      if (dustBalance > 0n) {
+        this.logger.info(`DUST disponible: ${dustBalance}`);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5_000));
+    }
   }
 
   /**

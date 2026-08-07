@@ -4,7 +4,7 @@ import { levelPrivateStateProvider } from '@midnight-ntwrk/midnight-js-level-pri
 import { NodeZkConfigProvider } from '@midnight-ntwrk/midnight-js-node-zk-config-provider';
 import type { MedLicenseProviders } from '@medlicense/api';
 
-import { contractBuildPath, preprodEnvironment } from './config.js';
+import { contractBuildPath, previewEnvironment } from './config.js';
 import type { MidnightWalletProvider } from './wallet.js';
 
 export function configureProviders(wallet: MidnightWalletProvider): MedLicenseProviders {
@@ -20,9 +20,9 @@ export function configureProviders(wallet: MidnightWalletProvider): MedLicensePr
       // (ver PrivateState = undefined en api/src/midnight.ts).
       privateStoragePasswordProvider: () => 'MedLicense-Demo-2026!',
     }),
-    publicDataProvider: indexerPublicDataProvider(preprodEnvironment.indexer, preprodEnvironment.indexerWS),
+    publicDataProvider: indexerPublicDataProvider(previewEnvironment.indexer, previewEnvironment.indexerWS),
     zkConfigProvider,
-    proofProvider: httpClientProofProvider(preprodEnvironment.proofServer, zkConfigProvider),
+    proofProvider: httpClientProofProvider(previewEnvironment.proofServer, zkConfigProvider),
     walletProvider: wallet,
     midnightProvider: wallet,
   } as MedLicenseProviders;

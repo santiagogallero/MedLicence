@@ -1,5 +1,5 @@
 /**
- * Deploy manual + smoke test end-to-end contra Preprod real (sin mock).
+ * Deploy manual + smoke test end-to-end contra Preview real (sin mock).
  *
  * Uso:
  *   WALLET_SEED=<64 hex chars, opcional> npm run cli
@@ -19,7 +19,7 @@ import pino from 'pino';
 
 import { LicenseAlreadyUsedError, MidnightMedLicenseApi, toBytes32 } from '@medlicense/api';
 
-import { preprodEnvironment } from './config.js';
+import { previewEnvironment } from './config.js';
 import { configureProviders } from './providers.js';
 import { MidnightWalletProvider } from './wallet.js';
 
@@ -36,15 +36,17 @@ async function loadSavedAddress(): Promise<string | null> {
 }
 
 async function main() {
-  const wallet = await MidnightWalletProvider.build(logger, preprodEnvironment, process.env.WALLET_SEED);
+  const wallet = await MidnightWalletProvider.build(logger, previewEnvironment, process.env.WALLET_SEED);
   await wallet.start();
 
   logger.info(`Dirección de la wallet (pegá esta en el faucet): ${wallet.unshieldedAddress}`);
   const rli = createInterface({ input: process.stdin, output: process.stdout });
   await rli.question(
-    `Cargá tNIGHT en esa dirección desde el faucet (${preprodEnvironment.faucet}) y presioná Enter para continuar...`,
+    `Cargá tNIGHT en esa dirección desde el faucet (${previewEnvironment.faucet}) y presioná Enter para continuar...`,
   );
   rli.close();
+
+  await wallet.ensureDustGenerated();
 
   const providers = configureProviders(wallet);
 
