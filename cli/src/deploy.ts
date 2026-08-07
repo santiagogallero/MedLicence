@@ -17,7 +17,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pino from 'pino';
 
-import { LicenseAlreadyUsedError, MidnightMedLicenseApi, toBytes32, toHex } from '@medlicense/api';
+import { LicenseAlreadyUsedError, MidnightMedLicenseApi, toBytes32 } from '@medlicense/api';
 
 import { preprodEnvironment } from './config.js';
 import { configureProviders } from './providers.js';
@@ -39,10 +39,10 @@ async function main() {
   const wallet = await MidnightWalletProvider.build(logger, preprodEnvironment, process.env.WALLET_SEED);
   await wallet.start();
 
-  logger.info(`Dirección de la wallet (coin public key): ${toHex(wallet.getCoinPublicKey() as unknown as Uint8Array)}`);
+  logger.info(`Dirección de la wallet (pegá esta en el faucet): ${wallet.unshieldedAddress}`);
   const rli = createInterface({ input: process.stdin, output: process.stdout });
   await rli.question(
-    `Cargá tDUST en esa wallet desde el faucet (${preprodEnvironment.faucet}) y presioná Enter para continuar...`,
+    `Cargá tNIGHT en esa dirección desde el faucet (${preprodEnvironment.faucet}) y presioná Enter para continuar...`,
   );
   rli.close();
 

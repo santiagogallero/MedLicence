@@ -23,6 +23,7 @@ import {
   type DustWalletOptions,
   type EnvironmentConfiguration,
 } from '@midnight-ntwrk/testkit-js';
+import type { UnshieldedKeystore } from '@midnight-ntwrk/wallet-sdk-unshielded-wallet';
 import type { WalletFacade } from '@midnight-ntwrk/wallet-sdk-facade';
 import type { Logger } from 'pino';
 
@@ -32,7 +33,13 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
     readonly wallet: WalletFacade,
     private readonly zswapSecretKeys: ZswapSecretKeys,
     private readonly dustSecretKey: DustSecretKey,
+    private readonly unshieldedKeystore: UnshieldedKeystore,
   ) {}
+
+  /** Dirección bech32m (`mn_addr_preprod...`) — la que pide el faucet de tNIGHT. */
+  get unshieldedAddress(): string {
+    return this.unshieldedKeystore.getBech32Address().asString();
+  }
 
   getCoinPublicKey(): CoinPublicKey {
     return this.zswapSecretKeys.coinPublicKey;
@@ -82,9 +89,10 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
     const buildResult = seed
       ? await builder.withSeed(seed).buildWithoutStarting()
       : await builder.withRandomSeed().buildWithoutStarting();
-    const { wallet, seeds } = buildResult as {
+    const { wallet, seeds, keystore } = buildResult as {
       wallet: WalletFacade;
       seeds: { masterSeed: string; shielded: Uint8Array; dust: Uint8Array };
+      keystore: UnshieldedKeystore;
     };
 
     logger.info(`Wallet seed: ${seeds.masterSeed}`);
@@ -97,6 +105,7 @@ export class MidnightWalletProvider implements MidnightProvider, WalletProvider 
       wallet,
       ZswapSecretKeys.fromSeed(seeds.shielded),
       DustSecretKey.fromSeed(seeds.dust),
+      keystore,
     );
   }
 }
