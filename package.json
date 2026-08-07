@@ -1,0 +1,23 @@
+{
+  "name": "medlicense",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "api",
+    "cli",
+    "ui"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "compact": "cd contract && compact compile src/medlicense.compact build",
+    "dev": "npm run dev --workspace=@medlicense/ui",
+    "cli": "npm run start --workspace=@medlicense/cli",
+    "typecheck": "tsc -b --pretty"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

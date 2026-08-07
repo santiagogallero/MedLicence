@@ -1,0 +1,10 @@
+{
+  "name": "@medlicense/contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "compile": "compact compile src/medlicense.compact build",
+    "clean": "rm -rf build"
+  }
+}
