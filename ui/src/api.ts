@@ -9,7 +9,7 @@ const DOCTOR_KEY_STORAGE = 'medlicence-doctor-key'
 
 export type LicenseType = 'MEDICA' | 'MATERNIDAD' | 'ACCIDENTE_LABORAL' | 'FAMILIAR'
 
-export type LeaveStatus = 'invited' | 'submitted' | 'certified' | 'proven' | 'verified'
+export type LeaveStatus = 'invited' | 'proven' | 'verified'
 
 export type Company = {
   id: string
@@ -30,12 +30,10 @@ export type LeaveRequest = {
   status: LeaveStatus
   employeeName?: string
   companyName?: string
+  doctorEmail?: string
   licenseType?: LicenseType
   periodStart?: string
   periodEnd?: string
-  /** Solo presente cuando lo pide el médico (`x-doctor-key`). Nadie más lo recibe. */
-  diagnosisNote?: string
-  credential?: unknown
   proof?: unknown
   verification?: VerificationResult
 }
@@ -185,10 +183,10 @@ export function createEmployee(input: { name: string; email: string }) {
   })
 }
 
-export function requestLeave(employeeId: string) {
+export function requestLeave(employeeId: string, doctorEmail: string) {
   return request<{ token: string; link: string; employee: Employee }>(
     `/company/employees/${employeeId}/request-leave`,
-    { method: 'POST', auth: 'company' },
+    { method: 'POST', body: { doctorEmail }, auth: 'company' },
   )
 }
 
@@ -213,7 +211,29 @@ export function getLeaveRequest(token: string) {
   return request<LeaveRequest>(`/leave-requests/${token}`)
 }
 
-export function submitLeaveRequest(
+// -- Trabajador: autogestión para urgencias (sin esperar el link de RRHH) ----
+
+export type SelfRequestResult =
+  | { token: string; link: string; employee: Employee }
+  | { needsCompanySelection: true; options: { companyId: string; companyName?: string }[] }
+
+export function selfRequestLeave(email: string, doctorEmail: string, companyId?: string) {
+  return request<SelfRequestResult>('/employees/self-request', {
+    method: 'POST',
+    body: companyId ? { email, doctorEmail, companyId } : { email, doctorEmail },
+  })
+}
+
+// -- Médico ---------------------------------------------------------------
+// El médico certifica Y prueba en un solo paso: es quien completa el
+// período y el diagnóstico (nunca el trabajador). El diagnóstico viaja acá
+// y nunca se guarda en el servidor más allá de esta llamada.
+
+export function getDoctorPending() {
+  return request<{ pending: LeaveRequest[] }>('/doctor/pending', { auth: 'doctor' })
+}
+
+export function certifyLeaveRequest(
   token: string,
   input: {
     licenseType: LicenseType
@@ -222,40 +242,9 @@ export function submitLeaveRequest(
     diagnosisNote?: string
   },
 ) {
-  return request<LeaveRequest>(`/leave-requests/${token}/submit`, {
-    method: 'POST',
-    body: input,
-  })
-}
-
-export function generateProofForRequest(token: string) {
-  return request<{ proof: unknown }>(`/leave-requests/${token}/generate-proof`, {
-    method: 'POST',
-  })
-}
-
-// -- Trabajador: autogestión para urgencias (sin esperar el link de RRHH) ----
-
-export type SelfRequestResult =
-  | { token: string; link: string; employee: Employee }
-  | { needsCompanySelection: true; options: { companyId: string; companyName?: string }[] }
-
-export function selfRequestLeave(email: string, companyId?: string) {
-  return request<SelfRequestResult>('/employees/self-request', {
-    method: 'POST',
-    body: companyId ? { email, companyId } : { email },
-  })
-}
-
-// -- Médico -------------------------------------------------------------------
-
-export function getDoctorPending() {
-  return request<{ pending: LeaveRequest[] }>('/doctor/pending', { auth: 'doctor' })
-}
-
-export function certifyLeaveRequest(token: string) {
   return request<LeaveRequest>(`/doctor/pending/${token}/certify`, {
     method: 'POST',
+    body: input,
     auth: 'doctor',
   })
 }

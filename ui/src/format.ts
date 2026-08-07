@@ -8,9 +8,7 @@ export const LICENSE_TYPE_LABELS: Record<LicenseType, string> = {
 }
 
 export const STATUS_META: Record<LeaveStatus, { label: string; tone: 'wait' | 'progress' | 'done' }> = {
-  invited: { label: 'Esperando al trabajador', tone: 'wait' },
-  submitted: { label: 'En revisión médica', tone: 'progress' },
-  certified: { label: 'Certificado, falta confirmar', tone: 'progress' },
+  invited: { label: 'Esperando certificación médica', tone: 'wait' },
   proven: { label: 'Listo para confirmar', tone: 'progress' },
   verified: { label: 'Confirmado', tone: 'done' },
 }

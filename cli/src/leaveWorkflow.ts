@@ -1,23 +1,37 @@
 /**
  * Ciclo de vida operativo alrededor del backend ZK ya existente:
  *
- *   Empresa (login) → pool de empleados → "este empleado va a faltar"
- *     → se genera un link (el "mail" — simulado, ver nota abajo)
- *   Empleado abre el link (sin instalar nada) → carga tipo/período de licencia
- *   Médico (vista aparte, gate simple) → certifica → ACÁ se llama al
- *     issueCredential() real (la emisión ZK de verdad)
- *   Empleado vuelve al link → genera la prueba (llama a generateProof real)
- *   Empresa ve la solicitud lista → verifica (llama a verifyProof real)
+ *   Se dispara el trámite (empresa, o el propio trabajador en una urgencia)
+ *     indicando el email de un médico VALIDADO (ver validDoctorEmails) →
+ *     se notifica (simulado) al médico y al trabajador.
+ *   Médico (vista con clave compartida — ver nota de alcance abajo) ve el
+ *     pendiente, completa él mismo período + diagnóstico, y certifica.
+ *     Certificar hace DOS cosas reales en la misma acción: emite la
+ *     credencial (issueCredential) Y genera la prueba (generateProof).
+ *     El trabajador no escribe nada — el diagnóstico nace del médico, no
+ *     de un autoreporte, y nunca se guarda en ningún lado más allá de esa
+ *     llamada.
+ *   Trabajador ve el resultado (no tiene ninguna acción pendiente).
+ *   Empresa verifica.
  *
- * Todo en memoria (Maps) — se resetea si reiniciás el server. Para el
- * hackathon está bien: es orquestación alrededor de las llamadas reales al
- * contrato, que sí son persistentes on-chain.
+ * Por qué no hace falta un paso separado de "el trabajador genera la
+ * prueba": en esta implementación el secreto de la credencial vive en
+ * este server desde que se emite — nunca viaja al navegador del
+ * trabajador. Un click del trabajador ahí no aportaba ninguna garantía
+ * criptográfica real (eso lo dan el circuito y el nullifier, no quién
+ * aprieta un botón), así que certificar y probar se colapsan en un solo
+ * paso atómico.
  *
- * EMAIL SIMULADO A PROPÓSITO (decisión tomada con el usuario): no hay
- * credenciales de SMTP/Resend, así que en vez de mandar un mail de verdad,
- * `request-leave` devuelve el link directo en la respuesta HTTP y lo loguea
- * server-side. El front (Valen) tiene que mostrar ese link en el dashboard
- * de la empresa como si fuera el contenido del mail.
+ * ALCANCE: "médico validado" acá es una lista de emails permitidos
+ * (VALID_DOCTOR_EMAILS), no un sistema de cuentas/firma por médico — el
+ * acceso a la vista sigue siendo una clave compartida (DOCTOR_KEY). Una
+ * versión real ataría la firma a cada médico individualmente.
+ *
+ * Todo en memoria (Maps) — se resetea si reiniciás el server.
+ *
+ * EMAIL SIMULADO A PROPÓSITO (no hay credenciales de SMTP/Resend): los
+ * links se devuelven en la respuesta HTTP y se loguean server-side como si
+ * fueran el mail enviado.
  */
 import { randomBytes } from 'node:crypto';
 import { Router } from 'express';
@@ -41,17 +55,17 @@ type Employee = {
   email: string;
 };
 
-type LeaveStatus = 'invited' | 'submitted' | 'certified' | 'proven' | 'verified';
+type LeaveStatus = 'invited' | 'proven' | 'verified';
 
 type LeaveRequest = {
   token: string;
   companyId: string;
   employeeId: string;
+  doctorEmail: string;
   status: LeaveStatus;
   licenseType?: LicenseType;
   periodStart?: string;
   periodEnd?: string;
-  diagnosisNote?: string;
   credential?: { secret: string; commitment: string; issuedAt: string };
   proof?: unknown;
   verification?: unknown;
@@ -69,6 +83,10 @@ export function createLeaveWorkflowRouter(api: MidnightMedLicenseApi, logger: Lo
   const leaveRequests = new Map<string, LeaveRequest>(); // keyed by token
 
   const doctorKey = process.env.DOCTOR_KEY ?? 'medico-demo';
+  const validDoctorEmails = (process.env.VALID_DOCTOR_EMAILS ?? 'medico@demo.com')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
 
   function requireCompany(req: { headers: Record<string, unknown> }): Company {
     const auth = String(req.headers.authorization ?? '');
@@ -91,33 +109,7 @@ export function createLeaveWorkflowRouter(api: MidnightMedLicenseApi, logger: Lo
     return { id: e.id, name: e.name, email: e.email };
   }
 
-  /** Usado tanto por RRHH (request-leave) como por el propio empleado (self-request, urgencias). */
-  function createLeaveRequestFor(employee: Employee) {
-    const token = hex(16);
-    const request: LeaveRequest = {
-      token,
-      companyId: employee.companyId,
-      employeeId: employee.id,
-      status: 'invited',
-      createdAt: new Date().toISOString(),
-    };
-    leaveRequests.set(token, request);
-
-    const link = `${process.env.EMPLOYEE_APP_URL ?? 'http://localhost:5173/#/solicitud'}/${token}`;
-    // EMAIL SIMULADO: no hay proveedor de correo configurado. Se devuelve
-    // el link en la respuesta y se loguea acá como si fuera el mail enviado.
-    logger.info(`[mail simulado] Para: ${employee.email} — Asunto: Certificado médico — Link: ${link}`);
-
-    return { token, link };
-  }
-
-  /**
-   * `forDoctor` incluye el diagnóstico — el médico es la ÚNICA parte que
-   * debería verlo, para poder certificar con criterio médico real. La
-   * empresa y el propio link del empleado (una vez certificado) NUNCA lo
-   * reciben en esta función.
-   */
-  function publicLeaveRequest(r: LeaveRequest, forDoctor = false) {
+  function publicLeaveRequest(r: LeaveRequest) {
     const employee = employees.get(r.employeeId);
     const company = companies.get(r.companyId);
     return {
@@ -125,14 +117,40 @@ export function createLeaveWorkflowRouter(api: MidnightMedLicenseApi, logger: Lo
       status: r.status,
       employeeName: employee?.name,
       companyName: company?.name,
+      doctorEmail: r.doctorEmail,
       licenseType: r.licenseType,
       periodStart: r.periodStart,
       periodEnd: r.periodEnd,
-      ...(forDoctor ? { diagnosisNote: r.diagnosisNote } : {}),
-      credential: r.credential,
+      // `credential` (tiene el secreto) NUNCA sale de acá — ni la empresa ni
+      // el propio trabajador lo necesitan después de que se generó la
+      // prueba. `proof` sí es público: no contiene el secreto, es
+      // justamente lo que se comparte entre las partes.
       proof: r.proof,
       verification: r.verification,
     };
+  }
+
+  /** Usado tanto por RRHH (request-leave) como por el propio empleado (self-request, urgencias). */
+  function createLeaveRequestFor(employee: Employee, doctorEmail: string) {
+    const token = hex(16);
+    const request: LeaveRequest = {
+      token,
+      companyId: employee.companyId,
+      employeeId: employee.id,
+      doctorEmail,
+      status: 'invited',
+      createdAt: new Date().toISOString(),
+    };
+    leaveRequests.set(token, request);
+
+    const workerLink = `${process.env.EMPLOYEE_APP_URL ?? 'http://localhost:5173/#/solicitud'}/${token}`;
+    // EMAIL SIMULADO: no hay proveedor de correo configurado. Se devuelve
+    // el link del trabajador en la respuesta y se loguean acá ambos avisos
+    // (médico y trabajador) como si fueran los mails enviados.
+    logger.info(`[mail simulado] Para médico ${doctorEmail} — Asunto: Nueva solicitud de certificación — Paciente: ${employee.name}`);
+    logger.info(`[mail simulado] Para: ${employee.email} — Asunto: Tu certificado médico — Link: ${workerLink}`);
+
+    return { token, link: workerLink };
   }
 
   // -- Empresa: registro / login ---------------------------------------------
@@ -198,7 +216,7 @@ export function createLeaveWorkflowRouter(api: MidnightMedLicenseApi, logger: Lo
     }
   });
 
-  // -- Empresa: "che, subí tu certificado" (mail simulado) --------------------
+  // -- Disparar el trámite (empresa) ------------------------------------------
 
   router.post('/company/employees/:id/request-leave', (req, res) => {
     try {
@@ -208,52 +226,23 @@ export function createLeaveWorkflowRouter(api: MidnightMedLicenseApi, logger: Lo
         res.status(404).json({ error: 'EMPLOYEE_NOT_FOUND' });
         return;
       }
-      const { token, link } = createLeaveRequestFor(employee);
+      const doctorEmail = String(req.body?.doctorEmail ?? '').trim().toLowerCase();
+      if (!doctorEmail) {
+        res.status(400).json({ error: 'MISSING_FIELDS', message: 'Falta el email del médico.' });
+        return;
+      }
+      if (!validDoctorEmails.includes(doctorEmail)) {
+        res.status(400).json({
+          error: 'DOCTOR_NOT_VALIDATED',
+          message: 'Ese médico no está en la lista de emisores validados.',
+        });
+        return;
+      }
+      const { token, link } = createLeaveRequestFor(employee, doctorEmail);
       res.json({ token, link, employee: publicEmployee(employee) });
     } catch (err) {
       res.status((err as { status?: number }).status ?? 500).json({ error: String(err) });
     }
-  });
-
-  // -- Empleado: autogestión para urgencias (sin esperar a que RRHH lo dispare) --
-
-  /**
-   * Para cuando el trabajador no puede esperar a que la empresa le mande el
-   * link (urgencia médica real). Requiere que RRHH ya lo haya cargado como
-   * empleado en algún momento — no es un alta libre, solo salta el paso de
-   * "RRHH aprieta el botón". Si el mismo email está en más de una empresa,
-   * devuelve las opciones para que el front le pregunte en cuál trabaja.
-   */
-  router.post('/employees/self-request', (req, res) => {
-    const { email, companyId } = req.body ?? {};
-    if (!email) {
-      res.status(400).json({ error: 'MISSING_FIELDS' });
-      return;
-    }
-
-    let matches = [...employees.values()].filter((e) => e.email === email);
-    if (companyId) matches = matches.filter((e) => e.companyId === companyId);
-
-    if (matches.length === 0) {
-      res.status(404).json({
-        error: 'EMPLOYEE_NOT_FOUND',
-        message: 'Ese email no está cargado como empleado en ninguna empresa. Pedile a RRHH que te agregue primero.',
-      });
-      return;
-    }
-
-    if (matches.length > 1) {
-      res.json({
-        needsCompanySelection: true,
-        options: matches.map((e) => ({ companyId: e.companyId, companyName: companies.get(e.companyId)?.name })),
-      });
-      return;
-    }
-
-    const employee = matches[0];
-    const { token, link } = createLeaveRequestFor(employee);
-    logger.info(`Autogestión: ${employee.name} inició su propio trámite (urgencia) — token ${token}`);
-    res.json({ token, link, employee: publicEmployee(employee) });
   });
 
   router.get('/company/leave-requests', (req, res) => {
@@ -290,7 +279,56 @@ export function createLeaveWorkflowRouter(api: MidnightMedLicenseApi, logger: Lo
     }
   });
 
-  // -- Empleado: sin login, sin wallet, solo el link --------------------------
+  // -- Empleado: autogestión para urgencias (sin esperar a que RRHH lo dispare) --
+
+  /**
+   * Para cuando el trabajador no puede esperar a que la empresa le mande el
+   * link (urgencia médica real). Requiere que RRHH ya lo haya cargado como
+   * empleado en algún momento — no es un alta libre, solo salta el paso de
+   * "RRHH aprieta el botón". Si el mismo email está en más de una empresa,
+   * devuelve las opciones para que el front le pregunte en cuál trabaja.
+   */
+  router.post('/employees/self-request', (req, res) => {
+    const { email, companyId } = req.body ?? {};
+    const doctorEmail = String(req.body?.doctorEmail ?? '').trim().toLowerCase();
+    if (!email || !doctorEmail) {
+      res.status(400).json({ error: 'MISSING_FIELDS' });
+      return;
+    }
+    if (!validDoctorEmails.includes(doctorEmail)) {
+      res.status(400).json({
+        error: 'DOCTOR_NOT_VALIDATED',
+        message: 'Ese médico no está en la lista de emisores validados.',
+      });
+      return;
+    }
+
+    let matches = [...employees.values()].filter((e) => e.email === email);
+    if (companyId) matches = matches.filter((e) => e.companyId === companyId);
+
+    if (matches.length === 0) {
+      res.status(404).json({
+        error: 'EMPLOYEE_NOT_FOUND',
+        message: 'Ese email no está cargado como empleado en ninguna empresa. Pedile a RRHH que te agregue primero.',
+      });
+      return;
+    }
+
+    if (matches.length > 1) {
+      res.json({
+        needsCompanySelection: true,
+        options: matches.map((e) => ({ companyId: e.companyId, companyName: companies.get(e.companyId)?.name })),
+      });
+      return;
+    }
+
+    const employee = matches[0];
+    const { token, link } = createLeaveRequestFor(employee, doctorEmail);
+    logger.info(`Autogestión: ${employee.name} inició su propio trámite (urgencia) — token ${token}`);
+    res.json({ token, link, employee: publicEmployee(employee) });
+  });
+
+  // -- Trabajador: sin login, sin acción pendiente, solo para ver el estado ---
 
   router.get('/leave-requests/:token', (req, res) => {
     const request = leaveRequests.get(req.params.token);
@@ -301,63 +339,14 @@ export function createLeaveWorkflowRouter(api: MidnightMedLicenseApi, logger: Lo
     res.json(publicLeaveRequest(request));
   });
 
-  /** El empleado "sube el certificado": en la demo, solo carga los datos (tipo/período), no un archivo real. */
-  router.post('/leave-requests/:token/submit', (req, res) => {
-    const request = leaveRequests.get(req.params.token);
-    if (!request) {
-      res.status(404).json({ error: 'NOT_FOUND' });
-      return;
-    }
-    const { licenseType, periodStart, periodEnd, diagnosisNote } = req.body ?? {};
-    if (!licenseType || !periodStart || !periodEnd) {
-      res.status(400).json({ error: 'MISSING_FIELDS' });
-      return;
-    }
-    request.licenseType = licenseType;
-    request.periodStart = periodStart;
-    request.periodEnd = periodEnd;
-    request.diagnosisNote = diagnosisNote;
-    request.status = 'submitted';
-    res.json(publicLeaveRequest(request));
-  });
-
-  router.post('/leave-requests/:token/generate-proof', async (req, res) => {
-    try {
-      const request = leaveRequests.get(req.params.token);
-      if (!request) {
-        res.status(404).json({ error: 'NOT_FOUND' });
-        return;
-      }
-      if (request.status !== 'certified' || !request.credential) {
-        res.status(400).json({ error: 'NOT_CERTIFIED_YET' });
-        return;
-      }
-      const employee = employees.get(request.employeeId);
-      const proof = await api.generateProof({
-        ...request.credential,
-        issuerId: 'clinica-demo',
-        licenseType: request.licenseType!,
-        periodStart: request.periodStart!,
-        periodEnd: request.periodEnd!,
-      });
-      request.proof = proof;
-      request.status = 'proven';
-      logger.info(`Prueba generada para ${employee?.name ?? request.employeeId}`);
-      res.json({ proof });
-    } catch (err) {
-      logger.error(err);
-      res.status(500).json({ error: 'PROVE_FAILED', message: String(err) });
-    }
-  });
-
-  // -- Médico: certifica (esto SÍ es la emisión ZK real) ----------------------
+  // -- Médico: certifica Y prueba en un solo paso (emisión + prueba ZK reales) -
 
   router.get('/doctor/pending', (req, res) => {
     try {
       requireDoctor(req);
       const pending = [...leaveRequests.values()]
-        .filter((r) => r.status === 'submitted')
-        .map((r) => publicLeaveRequest(r, true));
+        .filter((r) => r.status === 'invited')
+        .map((r) => publicLeaveRequest(r));
       res.json({ pending });
     } catch (err) {
       res.status((err as { status?: number }).status ?? 500).json({ error: String(err) });
@@ -368,29 +357,41 @@ export function createLeaveWorkflowRouter(api: MidnightMedLicenseApi, logger: Lo
     try {
       requireDoctor(req);
       const request = leaveRequests.get(req.params.token);
-      if (!request || request.status !== 'submitted') {
+      if (!request || request.status !== 'invited') {
         res.status(404).json({ error: 'NOT_FOUND_OR_ALREADY_HANDLED' });
         return;
       }
+      const { licenseType, periodStart, periodEnd, diagnosisNote } = req.body ?? {};
+      if (!licenseType || !periodStart || !periodEnd) {
+        res.status(400).json({ error: 'MISSING_FIELDS' });
+        return;
+      }
+
+      // El diagnóstico solo existe en esta variable local, dentro de esta
+      // llamada — nunca se asigna a `request`, así que no hay nada que
+      // borrar después: no llega a persistir en ningún lado más allá de
+      // este punto.
       const credential = await api.issueCredential({
         issuerId: 'clinica-demo',
-        licenseType: request.licenseType!,
-        periodStart: request.periodStart!,
-        periodEnd: request.periodEnd!,
-        diagnosisNote: request.diagnosisNote,
+        licenseType,
+        periodStart,
+        periodEnd,
+        diagnosisNote,
       });
+      const proof = await api.generateProof(credential);
+
+      request.licenseType = licenseType;
+      request.periodStart = periodStart;
+      request.periodEnd = periodEnd;
       request.credential = {
         secret: credential.secret,
         commitment: credential.commitment,
         issuedAt: credential.issuedAt,
       };
-      request.status = 'certified';
-      // El diagnóstico ya cumplió su único propósito (que el médico decida).
-      // Se borra acá — de este punto en adelante ni la empresa ni el
-      // empleado (ni siquiera este mismo server, si alguien mirara la
-      // memoria) tienen forma de volver a verlo.
-      delete request.diagnosisNote;
-      logger.info(`Licencia certificada y emitida on-chain para token ${request.token}`);
+      request.proof = proof;
+      request.status = 'proven';
+
+      logger.info(`Certificado y probado on-chain de una: token ${request.token}`);
       res.json(publicLeaveRequest(request));
     } catch (err) {
       logger.error(err);

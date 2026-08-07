@@ -1,48 +1,15 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import {
-  CalendarDays,
-  Check,
-  EyeOff,
-  Laptop,
-  HeartPulse,
-  ShieldCheck,
-} from 'lucide-react'
-import {
-  ApiError,
-  generateProofForRequest,
-  getLeaveRequest,
-  submitLeaveRequest,
-  type LeaveRequest,
-  type LicenseType,
-} from './api'
-import { LICENSE_TYPE_LABELS, formatPeriod } from './format'
+import { Check, HeartPulse, Laptop, ShieldCheck } from 'lucide-react'
+import { ApiError, getLeaveRequest, type LeaveRequest } from './api'
+import { formatPeriod } from './format'
 import { ErrorNote, ProcessingPanel, StatusBadge } from './shared'
 import './App.css'
-
-const GENERATE_MESSAGES = [
-  'Preparando tu certificado...',
-  'Esto puede tardar unos segundos...',
-  'Confirmando los datos con el médico...',
-  'Ya casi termina...',
-]
-
-const LICENSE_OPTIONS: LicenseType[] = ['MEDICA', 'MATERNIDAD', 'ACCIDENTE_LABORAL', 'FAMILIAR']
 
 function WorkerRequest({ token }: { token: string }) {
   const [request, setRequest] = useState<LeaveRequest | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-
-  const [licenseType, setLicenseType] = useState<LicenseType>('MEDICA')
-  const [periodStart, setPeriodStart] = useState('')
-  const [periodEnd, setPeriodEnd] = useState('')
-  const [diagnosisNote, setDiagnosisNote] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [submitError, setSubmitError] = useState('')
-
-  const [generating, setGenerating] = useState(false)
-  const [generateError, setGenerateError] = useState('')
 
   const refresh = async () => {
     try {
@@ -70,49 +37,14 @@ function WorkerRequest({ token }: { token: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token])
 
-  // Mientras se espera a otra persona (médico o empresa), se consulta el
-  // estado solo — nadie tiene que quedarse apretando "actualizar".
+  // No hay ninguna acción de tu lado: mientras el médico no certifique, o
+  // la empresa no confirme, esto se actualiza solo.
   useEffect(() => {
-    if (request?.status !== 'submitted' && request?.status !== 'proven') return
+    if (request?.status !== 'invited' && request?.status !== 'proven') return
     const id = setInterval(refresh, 5000)
     return () => clearInterval(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request?.status])
-
-  const handleSubmit = async () => {
-    if (!periodStart || !periodEnd) {
-      setSubmitError('Completá el período de la licencia.')
-      return
-    }
-    setSubmitting(true)
-    setSubmitError('')
-    try {
-      const updated = await submitLeaveRequest(token, {
-        licenseType,
-        periodStart,
-        periodEnd,
-        diagnosisNote: diagnosisNote.trim() || undefined,
-      })
-      setRequest(updated)
-    } catch (err) {
-      setSubmitError(err instanceof ApiError ? err.message : 'No se pudo enviar la información.')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  const handleGenerate = async () => {
-    setGenerating(true)
-    setGenerateError('')
-    try {
-      await generateProofForRequest(token)
-      await refresh()
-    } catch (err) {
-      setGenerateError(err instanceof ApiError ? err.message : 'No se pudo confirmar el certificado.')
-    } finally {
-      setGenerating(false)
-    }
-  }
 
   return (
     <main className="worker-shell">
@@ -132,7 +64,7 @@ function WorkerRequest({ token }: { token: string }) {
       <div className="worker-content">
         <div className="security-chip worker-note">
           <Laptop size={17} />
-          <span>Sin wallet, sin instalar nada — es un formulario web normal.</span>
+          <span>Sin wallet, sin instalar nada — no tenés ninguna acción pendiente.</span>
           <ShieldCheck size={16} />
         </div>
 
@@ -165,126 +97,13 @@ function WorkerRequest({ token }: { token: string }) {
 
             <div className="panel-content">
               {request.status === 'invited' && (
-                <>
-                  <p className="section-description">
-                    Cargá los datos de tu licencia. La empresa solo va a ver el
-                    tipo y el período — nunca el diagnóstico.
-                  </p>
-
-                  <div className="form-grid">
-                    <label className="field full">
-                      <span>Tipo de licencia</span>
-                      <select
-                        value={licenseType}
-                        onChange={(event) => setLicenseType(event.target.value as LicenseType)}
-                      >
-                        {LICENSE_OPTIONS.map((option) => (
-                          <option key={option} value={option}>
-                            {LICENSE_TYPE_LABELS[option]}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label className="field">
-                      <span>Inicio</span>
-                      <div className="input-icon">
-                        <CalendarDays size={16} />
-                        <input
-                          type="date"
-                          value={periodStart}
-                          onChange={(event) => setPeriodStart(event.target.value)}
-                        />
-                      </div>
-                    </label>
-
-                    <label className="field">
-                      <span>Finalización</span>
-                      <div className="input-icon">
-                        <CalendarDays size={16} />
-                        <input
-                          type="date"
-                          value={periodEnd}
-                          onChange={(event) => setPeriodEnd(event.target.value)}
-                        />
-                      </div>
-                    </label>
-
-                    <label className="field full private-field">
-                      <span>
-                        Diagnóstico (opcional)
-                        <b>
-                          <EyeOff size={12} />
-                          Privado
-                        </b>
-                      </span>
-                      <textarea
-                        rows={3}
-                        value={diagnosisNote}
-                        onChange={(event) => setDiagnosisNote(event.target.value)}
-                        placeholder="Ej: reposo indicado por 7 días"
-                      />
-                      <small>Esto lo ve solo el médico, nunca tu empresa.</small>
-                    </label>
-                  </div>
-
-                  {submitError && <ErrorNote message={submitError} />}
-
-                  <div className="panel-action">
-                    <motion.button
-                      className="primary-button"
-                      onClick={handleSubmit}
-                      disabled={submitting}
-                      whileTap={{ scale: 0.98 }}
-                    >
-                      {submitting ? (
-                        <>
-                          <span className="spinner" />
-                          Enviando...
-                        </>
-                      ) : (
-                        <>
-                          <Check size={18} />
-                          Enviar al médico
-                        </>
-                      )}
-                    </motion.button>
-                  </div>
-                </>
-              )}
-
-              {request.status === 'submitted' && (
                 <ProcessingPanel
                   messages={[
-                    'Esperando certificación médica...',
+                    `Esperando certificación de ${request.doctorEmail ?? 'tu médico'}...`,
                     'Tu médico ya tiene tu solicitud.',
                     'Esto se actualiza solo, no hace falta recargar.',
                   ]}
                 />
-              )}
-
-              {request.status === 'certified' && (
-                <>
-                  <p className="section-description">
-                    Tu médico ya certificó la licencia. Confirmá tu
-                    certificado para que tu empresa pueda validarlo.
-                  </p>
-
-                  {generateError && <ErrorNote message={generateError} />}
-
-                  {generating ? (
-                    <ProcessingPanel messages={GENERATE_MESSAGES} />
-                  ) : (
-                    <motion.button
-                      className="primary-button"
-                      onClick={handleGenerate}
-                      whileTap={{ scale: 0.98 }}
-                    >
-                      <ShieldCheck size={18} />
-                      Confirmar mi certificado
-                    </motion.button>
-                  )}
-                </>
               )}
 
               {request.status === 'proven' && (
@@ -293,8 +112,8 @@ function WorkerRequest({ token }: { token: string }) {
                   <div>
                     <strong>Certificado listo</strong>
                     <span>
-                      Tu empresa ya puede confirmarlo. Te va a llegar tu
-                      licencia sin que nadie vea tu diagnóstico.
+                      Tu médico ya certificó y probó tu licencia. Tu empresa
+                      ya puede confirmarla — vos no tenés que hacer nada más.
                     </span>
                   </div>
                 </div>

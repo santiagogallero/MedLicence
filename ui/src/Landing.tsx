@@ -13,6 +13,7 @@ function goTo(hash: string) {
 function Landing() {
   const [showWorkerForm, setShowWorkerForm] = useState(false)
   const [email, setEmail] = useState('')
+  const [doctorEmail, setDoctorEmail] = useState('')
   const [companyOptions, setCompanyOptions] = useState<
     { companyId: string; companyName?: string }[] | null
   >(null)
@@ -20,11 +21,11 @@ function Landing() {
   const [error, setError] = useState('')
 
   const startSelfRequest = async (companyId?: string) => {
-    if (!email.trim()) return
+    if (!email.trim() || !doctorEmail.trim()) return
     setLoading(true)
     setError('')
     try {
-      const result = await selfRequestLeave(email.trim(), companyId)
+      const result = await selfRequestLeave(email.trim(), doctorEmail.trim(), companyId)
       if ('needsCompanySelection' in result) {
         setCompanyOptions(result.options)
       } else {
@@ -138,11 +139,21 @@ function Landing() {
                         autoFocus
                       />
                     </label>
+                    <label className="field full">
+                      <span>Email de tu médico (validado)</span>
+                      <input
+                        type="email"
+                        value={doctorEmail}
+                        onChange={(event) => setDoctorEmail(event.target.value)}
+                        onKeyDown={(event) => event.key === 'Enter' && startSelfRequest()}
+                        placeholder="medico@demo.com"
+                      />
+                    </label>
                     {error && <ErrorNote message={error} />}
                     <button
                       className="primary-button"
                       style={{ marginTop: 8 }}
-                      disabled={loading || !email.trim()}
+                      disabled={loading || !email.trim() || !doctorEmail.trim()}
                       onClick={() => startSelfRequest()}
                     >
                       {loading ? (

@@ -3066,6 +3066,26 @@ footer {
   white-space: nowrap;
 }
 
+.inline-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inline-form input {
+  height: 36px;
+  font-size: 12px;
+  min-width: 200px;
+}
+
+.inline-form .secondary-button {
+  height: 36px;
+  padding: 0 12px;
+  flex: 0 0 auto;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
 .leave-row {
   padding: 14px 15px;
   border: 1px solid rgba(255, 255, 255, 0.06);

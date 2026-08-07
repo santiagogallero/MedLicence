@@ -1,16 +1,128 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { EyeOff, HeartPulse, KeyRound, ShieldCheck, Stethoscope } from 'lucide-react'
-import { ApiError, certifyLeaveRequest, doctorSession, getDoctorPending, type LeaveRequest } from './api'
-import { LICENSE_TYPE_LABELS, formatPeriod } from './format'
+import {
+  ApiError,
+  certifyLeaveRequest,
+  doctorSession,
+  getDoctorPending,
+  type LeaveRequest,
+  type LicenseType,
+} from './api'
+import { LICENSE_TYPE_LABELS } from './format'
 import { ErrorNote, ProcessingPanel } from './shared'
 import './App.css'
 
 const CERTIFY_MESSAGES = [
   'Emitiendo la licencia...',
+  'Generando la prueba on-chain...',
   'Esto puede tardar unos segundos...',
-  'Registrando la certificación...',
+  'Ya casi termina...',
 ]
+
+const LICENSE_OPTIONS: LicenseType[] = ['MEDICA', 'MATERNIDAD', 'ACCIDENTE_LABORAL', 'FAMILIAR']
+
+function PendingCard({
+  item,
+  busy,
+  onCertify,
+}: {
+  item: LeaveRequest
+  busy: boolean
+  onCertify: (token: string, input: {
+    licenseType: LicenseType
+    periodStart: string
+    periodEnd: string
+    diagnosisNote?: string
+  }) => void
+}) {
+  const [licenseType, setLicenseType] = useState<LicenseType>('MEDICA')
+  const [periodStart, setPeriodStart] = useState('')
+  const [periodEnd, setPeriodEnd] = useState('')
+  const [diagnosisNote, setDiagnosisNote] = useState('')
+
+  const canSubmit = !!periodStart && !!periodEnd
+
+  return (
+    <div className="panel doctor-card" key={item.token}>
+      <div className="panel-content">
+        <div className="doctor-card-head">
+          <div>
+            <small>{item.companyName}</small>
+            <h3>{item.employeeName}</h3>
+          </div>
+        </div>
+
+        {busy ? (
+          <ProcessingPanel messages={CERTIFY_MESSAGES} />
+        ) : (
+          <>
+            <div className="form-grid">
+              <label className="field full">
+                <span>Tipo de licencia</span>
+                <select
+                  value={licenseType}
+                  onChange={(event) => setLicenseType(event.target.value as LicenseType)}
+                >
+                  {LICENSE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {LICENSE_TYPE_LABELS[option]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="field">
+                <span>Desde</span>
+                <input
+                  type="date"
+                  value={periodStart}
+                  onChange={(event) => setPeriodStart(event.target.value)}
+                />
+              </label>
+
+              <label className="field">
+                <span>Hasta</span>
+                <input
+                  type="date"
+                  value={periodEnd}
+                  onChange={(event) => setPeriodEnd(event.target.value)}
+                />
+              </label>
+
+              <label className="field full">
+                <span>Diagnóstico (solo vos lo ves)</span>
+                <textarea
+                  value={diagnosisNote}
+                  onChange={(event) => setDiagnosisNote(event.target.value)}
+                  placeholder="Reposo médico indicado..."
+                  rows={2}
+                />
+              </label>
+            </div>
+
+            <motion.button
+              className="primary-button panel-action"
+              onClick={() =>
+                onCertify(item.token, {
+                  licenseType,
+                  periodStart,
+                  periodEnd,
+                  diagnosisNote: diagnosisNote.trim() || undefined,
+                })
+              }
+              disabled={!canSubmit}
+              whileTap={{ scale: 0.98 }}
+            >
+              <ShieldCheck size={17} />
+              Certificar
+            </motion.button>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
 
 function DoctorPortal() {
   const [gateOpen, setGateOpen] = useState(!doctorSession.key)
@@ -60,11 +172,14 @@ function DoctorPortal() {
     await loadPending()
   }
 
-  const handleCertify = async (token: string) => {
+  const handleCertify = async (
+    token: string,
+    input: { licenseType: LicenseType; periodStart: string; periodEnd: string; diagnosisNote?: string },
+  ) => {
     setCertifyingToken(token)
     setCertifyError('')
     try {
-      await certifyLeaveRequest(token)
+      await certifyLeaveRequest(token, input)
       await loadPending()
     } catch (err) {
       setCertifyError(err instanceof ApiError ? err.message : 'No se pudo certificar.')
@@ -164,8 +279,9 @@ function DoctorPortal() {
       <div className="worker-content wide">
         <div className="diagnosis-banner">
           <EyeOff size={16} />
-          Esta es la única pantalla que muestra el diagnóstico. Ni la empresa
-          ni el trabajador lo reciben de acá en adelante.
+          Vos completás el período y el diagnóstico acá — nadie más los
+          escribe, y una vez que certificás, el diagnóstico no queda
+          guardado en ningún lado. Ni la empresa ni el trabajador lo reciben.
         </div>
 
         {loadError && <ErrorNote message={loadError} />}
@@ -177,44 +293,12 @@ function DoctorPortal() {
 
         <div className="doctor-list">
           {pending.map((item) => (
-            <div className="panel doctor-card" key={item.token}>
-              <div className="panel-content">
-                <div className="doctor-card-head">
-                  <div>
-                    <small>{item.companyName}</small>
-                    <h3>{item.employeeName}</h3>
-                  </div>
-                  <span className="role-badge">
-                    {item.licenseType ? LICENSE_TYPE_LABELS[item.licenseType] : '—'}
-                  </span>
-                </div>
-
-                <div className="doctor-card-body">
-                  <div>
-                    <small>Período</small>
-                    <strong>{formatPeriod(item.periodStart, item.periodEnd)}</strong>
-                  </div>
-                  <div className="doctor-diagnosis">
-                    <small>Diagnóstico</small>
-                    <strong>{item.diagnosisNote || 'No se cargó diagnóstico.'}</strong>
-                  </div>
-                </div>
-
-                {certifyingToken === item.token ? (
-                  <ProcessingPanel messages={CERTIFY_MESSAGES} />
-                ) : (
-                  <motion.button
-                    className="primary-button panel-action"
-                    onClick={() => handleCertify(item.token)}
-                    disabled={certifyingToken !== null}
-                    whileTap={{ scale: 0.98 }}
-                  >
-                    <ShieldCheck size={17} />
-                    Certificar
-                  </motion.button>
-                )}
-              </div>
-            </div>
+            <PendingCard
+              key={item.token}
+              item={item}
+              busy={certifyingToken === item.token}
+              onCertify={handleCertify}
+            />
           ))}
         </div>
       </div>

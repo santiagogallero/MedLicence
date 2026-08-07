@@ -306,6 +306,8 @@ function Dashboard({ company, onLogout }: { company: Company; onLogout: () => vo
   const [loadingRequests, setLoadingRequests] = useState(true)
 
   const [requestingFor, setRequestingFor] = useState<string | null>(null)
+  const [doctorEmailFor, setDoctorEmailFor] = useState<string | null>(null)
+  const [doctorEmailInput, setDoctorEmailInput] = useState('')
   const [mailPreview, setMailPreview] = useState<{ email: string; link: string } | null>(null)
   const [copied, setCopied] = useState(false)
 
@@ -368,12 +370,15 @@ function Dashboard({ company, onLogout }: { company: Company; onLogout: () => vo
     }
   }
 
-  const askForLeave = async (employee: Employee) => {
+  const askForLeave = async (employee: Employee, doctorEmail: string) => {
+    if (!doctorEmail.trim()) return
     setRequestingFor(employee.id)
     setDashboardError('')
     try {
-      const result = await requestLeave(employee.id)
+      const result = await requestLeave(employee.id, doctorEmail.trim())
       setMailPreview({ email: employee.email, link: result.link })
+      setDoctorEmailFor(null)
+      setDoctorEmailInput('')
       await loadRequests()
     } catch (err) {
       handleAuthError(err)
@@ -490,18 +495,44 @@ function Dashboard({ company, onLogout }: { company: Company; onLogout: () => vo
                         <strong>{employee.name}</strong>
                         <small>{employee.email}</small>
                       </div>
-                      <button
-                        className="secondary-button"
-                        onClick={() => askForLeave(employee)}
-                        disabled={requestingFor === employee.id}
-                      >
-                        {requestingFor === employee.id ? (
-                          <span className="spinner-light" />
-                        ) : (
+
+                      {doctorEmailFor === employee.id ? (
+                        <div className="inline-form">
+                          <input
+                            type="email"
+                            placeholder="Email del médico validado"
+                            value={doctorEmailInput}
+                            onChange={(event) => setDoctorEmailInput(event.target.value)}
+                            onKeyDown={(event) =>
+                              event.key === 'Enter' && askForLeave(employee, doctorEmailInput)
+                            }
+                            autoFocus
+                          />
+                          <button
+                            className="secondary-button"
+                            onClick={() => askForLeave(employee, doctorEmailInput)}
+                            disabled={requestingFor === employee.id || !doctorEmailInput.trim()}
+                          >
+                            {requestingFor === employee.id ? (
+                              <span className="spinner-light" />
+                            ) : (
+                              <Plus size={14} />
+                            )}
+                            Confirmar
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          className="secondary-button"
+                          onClick={() => {
+                            setDoctorEmailFor(employee.id)
+                            setDoctorEmailInput('')
+                          }}
+                        >
                           <Plus size={14} />
-                        )}
-                        Pidió licencia
-                      </button>
+                          Pidió licencia
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
