@@ -12,11 +12,10 @@
     "isolatedModules": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    "types": ["vite/client"],
     "paths": {
       "@medlicense/api": ["./api/src/index.ts"]
     },
     "baseUrl": "."
   },
-  "include": ["api/src", "ui/src", "cli/src"]
+  "include": ["api/src", "cli/src"]
 }
