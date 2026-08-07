@@ -32,6 +32,7 @@ import pino from 'pino';
 import { fromHex, LicenseAlreadyUsedError, MidnightMedLicenseApi } from '@medlicense/api';
 
 import { previewEnvironment } from './config.js';
+import { createLeaveWorkflowRouter } from './leaveWorkflow.js';
 import { configureProviders } from './providers.js';
 import { MidnightWalletProvider } from './wallet.js';
 
@@ -116,6 +117,9 @@ async function main() {
   app.get('/ledger', async (_req, res) => {
     res.json(await api.getLedgerState());
   });
+
+  // Ciclo de vida empresa → empleado → médico (ver leaveWorkflow.ts).
+  app.use(createLeaveWorkflowRouter(api, logger));
 
   app.listen(PORT, '0.0.0.0', () => {
     logger.info(`Bridge server escuchando en http://localhost:${PORT}`);
