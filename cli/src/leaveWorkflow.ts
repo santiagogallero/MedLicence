@@ -91,6 +91,26 @@ export function createLeaveWorkflowRouter(api: MidnightMedLicenseApi, logger: Lo
     return { id: e.id, name: e.name, email: e.email };
   }
 
+  /** Usado tanto por RRHH (request-leave) como por el propio empleado (self-request, urgencias). */
+  function createLeaveRequestFor(employee: Employee) {
+    const token = hex(16);
+    const request: LeaveRequest = {
+      token,
+      companyId: employee.companyId,
+      employeeId: employee.id,
+      status: 'invited',
+      createdAt: new Date().toISOString(),
+    };
+    leaveRequests.set(token, request);
+
+    const link = `${process.env.EMPLOYEE_APP_URL ?? 'http://localhost:5173/#/solicitud'}/${token}`;
+    // EMAIL SIMULADO: no hay proveedor de correo configurado. Se devuelve
+    // el link en la respuesta y se loguea acá como si fuera el mail enviado.
+    logger.info(`[mail simulado] Para: ${employee.email} — Asunto: Certificado médico — Link: ${link}`);
+
+    return { token, link };
+  }
+
   /**
    * `forDoctor` incluye el diagnóstico — el médico es la ÚNICA parte que
    * debería verlo, para poder certificar con criterio médico real. La
@@ -188,26 +208,52 @@ export function createLeaveWorkflowRouter(api: MidnightMedLicenseApi, logger: Lo
         res.status(404).json({ error: 'EMPLOYEE_NOT_FOUND' });
         return;
       }
-      const token = hex(16);
-      const request: LeaveRequest = {
-        token,
-        companyId: company.id,
-        employeeId: employee.id,
-        status: 'invited',
-        createdAt: new Date().toISOString(),
-      };
-      leaveRequests.set(token, request);
-
-      const link = `${process.env.EMPLOYEE_APP_URL ?? 'http://localhost:5173/#/solicitud'}/${token}`;
-      // EMAIL SIMULADO: no hay proveedor de correo configurado. Se devuelve
-      // el link en la respuesta para que la empresa lo muestre/copie, y se
-      // loguea acá como si fuera el contenido del mail que se mandó.
-      logger.info(`[mail simulado] Para: ${employee.email} — Asunto: Certificado médico — Link: ${link}`);
-
+      const { token, link } = createLeaveRequestFor(employee);
       res.json({ token, link, employee: publicEmployee(employee) });
     } catch (err) {
       res.status((err as { status?: number }).status ?? 500).json({ error: String(err) });
     }
+  });
+
+  // -- Empleado: autogestión para urgencias (sin esperar a que RRHH lo dispare) --
+
+  /**
+   * Para cuando el trabajador no puede esperar a que la empresa le mande el
+   * link (urgencia médica real). Requiere que RRHH ya lo haya cargado como
+   * empleado en algún momento — no es un alta libre, solo salta el paso de
+   * "RRHH aprieta el botón". Si el mismo email está en más de una empresa,
+   * devuelve las opciones para que el front le pregunte en cuál trabaja.
+   */
+  router.post('/employees/self-request', (req, res) => {
+    const { email, companyId } = req.body ?? {};
+    if (!email) {
+      res.status(400).json({ error: 'MISSING_FIELDS' });
+      return;
+    }
+
+    let matches = [...employees.values()].filter((e) => e.email === email);
+    if (companyId) matches = matches.filter((e) => e.companyId === companyId);
+
+    if (matches.length === 0) {
+      res.status(404).json({
+        error: 'EMPLOYEE_NOT_FOUND',
+        message: 'Ese email no está cargado como empleado en ninguna empresa. Pedile a RRHH que te agregue primero.',
+      });
+      return;
+    }
+
+    if (matches.length > 1) {
+      res.json({
+        needsCompanySelection: true,
+        options: matches.map((e) => ({ companyId: e.companyId, companyName: companies.get(e.companyId)?.name })),
+      });
+      return;
+    }
+
+    const employee = matches[0];
+    const { token, link } = createLeaveRequestFor(employee);
+    logger.info(`Autogestión: ${employee.name} inició su propio trámite (urgencia) — token ${token}`);
+    res.json({ token, link, employee: publicEmployee(employee) });
   });
 
   router.get('/company/leave-requests', (req, res) => {
