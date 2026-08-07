@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { setNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -20,3 +21,7 @@ export const preprodEnvironment = {
   faucet: 'https://midnight-tmnight-preprod.nethermind.dev/',
   proofServer: process.env.PROOF_SERVER_URL ?? 'http://127.0.0.1:6300',
 };
+
+// Tiene que llamarse antes de cualquier operación de wallet/contrato — si no,
+// deployContract/findDeployedContract tiran "Network ID has not been configured".
+setNetworkId(preprodEnvironment.networkId);
