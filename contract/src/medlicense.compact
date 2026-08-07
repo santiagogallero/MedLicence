@@ -48,7 +48,9 @@ constructor(issuer: Bytes<32>) {
 
 /// commitment = H(secreto, tipo, periodo). Determinístico: la clínica lo calcula
 /// al emitir y el trabajador lo recalcula dentro del circuito al probar.
-circuit computeCommitment(
+/// `export pure` (no toca ledger ni witness) → el compilador lo expone en
+/// `pureCircuits` del lado TS, así api/ calcula el mismo hash sin reimplementarlo.
+export pure circuit computeCommitment(
   secret: Bytes<32>,
   licenseType: Bytes<32>,
   period: Bytes<32>
@@ -58,7 +60,7 @@ circuit computeCommitment(
 
 /// El nullifier depende solo del secreto → una credencial, un uso.
 /// El dominio ("medlic:null:") evita colisiones con el commitment.
-circuit computeNullifier(secret: Bytes<32>): Bytes<32> {
+export pure circuit computeNullifier(secret: Bytes<32>): Bytes<32> {
   return persistentHash<Vector<2, Bytes<32>>>([pad(32, "medlic:null:"), secret]);
 }
 
