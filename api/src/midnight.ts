@@ -83,7 +83,7 @@ export class LicenseAlreadyUsedError extends Error {
 type MedLicenseCircuitId = 'issueLicense' | 'proveLicense';
 export type MedLicenseProviders = MidnightProviders<MedLicenseCircuitId, string, PrivateState>;
 
-/** issueLicense no invoca witnesses — nunca deberían ejecutarse. */
+/** El constructor no invoca ningún witness — nunca deberían ejecutarse. */
 const unusedWitnesses: ContractWitnesses<PrivateState> = {
   localSecret: () => {
     throw new Error('localSecret no debería invocarse fuera de proveLicense');
@@ -91,7 +91,21 @@ const unusedWitnesses: ContractWitnesses<PrivateState> = {
   merklePath: () => {
     throw new Error('merklePath no debería invocarse fuera de proveLicense');
   },
+  issuerSecretKey: () => {
+    throw new Error('issuerSecretKey no debería invocarse fuera de issueLicense');
+  },
 };
+
+/** Witnesses para issueLicense: cierran sobre el secreto de la clínica. */
+function makeIssuerWitnesses(issuerSecret: Uint8Array): ContractWitnesses<PrivateState> {
+  return {
+    ...unusedWitnesses,
+    issuerSecretKey: (context: WitnessContext<Ledger, PrivateState>) => [
+      context.privateState,
+      issuerSecret,
+    ],
+  };
+}
 
 /** Witnesses reales para proveLicense: cierran sobre el secreto de ESTA credencial. */
 function makeProveWitnesses(
@@ -100,6 +114,7 @@ function makeProveWitnesses(
   periodBytes: Uint8Array,
 ): ContractWitnesses<PrivateState> {
   return {
+    ...unusedWitnesses,
     localSecret: (context: WitnessContext<Ledger, PrivateState>) => [context.privateState, secret],
     merklePath: (context: WitnessContext<Ledger, PrivateState>) => {
       const commitment = pureCircuits.computeCommitment(secret, licenseTypeBytes, periodBytes);
@@ -118,52 +133,71 @@ export class MidnightMedLicenseApi implements MedLicenseApi {
   private constructor(
     private readonly providers: MedLicenseProviders,
     private readonly contractAddress: string,
+    /**
+     * Solo hace falta para emitir (issueCredential). Una instancia conectada
+     * únicamente para prove/verify puede pasar `undefined` acá.
+     */
+    private readonly issuerSecret: Uint8Array | undefined,
   ) {}
 
-  /** Conecta a un contrato YA deployado (dirección guardada de una corrida anterior de `cli`). */
+  /**
+   * Conecta a un contrato YA deployado (dirección guardada de una corrida
+   * anterior de `cli`). `issuerSecret` es obligatorio si esta instancia va
+   * a emitir credenciales — tiene que ser EL MISMO secreto usado en deploy().
+   */
   static async connect(
     providers: MedLicenseProviders,
     contractAddress: string,
+    issuerSecret?: Uint8Array,
   ): Promise<MidnightMedLicenseApi> {
     const state = await providers.publicDataProvider.queryContractState(contractAddress);
     if (state == null) {
       throw new Error(`No hay ningún contrato deployado en ${contractAddress}`);
     }
-    return new MidnightMedLicenseApi(providers, contractAddress);
+    return new MidnightMedLicenseApi(providers, contractAddress, issuerSecret);
   }
 
-  /** Deploya el contrato por primera vez. `issuer` identifica a la clínica (ver cli/). */
+  /**
+   * Deploya el contrato por primera vez. `issuerSecret` es el secreto de la
+   * clínica — NUNCA se manda on-chain, solo se publica su hash
+   * (computeIssuerPublicKey) como `authorizedIssuer`. Guardalo: sin él no se
+   * pueden emitir más credenciales en este contrato.
+   */
   static async deploy(
     providers: MedLicenseProviders,
-    issuer: Uint8Array,
+    issuerSecret: Uint8Array,
   ): Promise<MidnightMedLicenseApi> {
+    const issuerPublicKey = pureCircuits.computeIssuerPublicKey(issuerSecret);
     const deployed = await deployContract(providers, {
       compiledContract: bindContract(unusedWitnesses),
-      args: [issuer],
+      args: [issuerPublicKey],
     });
-    return new MidnightMedLicenseApi(providers, deployed.deployTxData.public.contractAddress);
+    return new MidnightMedLicenseApi(
+      providers,
+      deployed.deployTxData.public.contractAddress,
+      issuerSecret,
+    );
   }
 
   get address(): string {
     return this.contractAddress;
   }
 
-  private connectReadOnly() {
-    return findDeployedContract(this.providers, {
-      contractAddress: this.contractAddress,
-      compiledContract: bindContract(unusedWitnesses),
-    });
-  }
-
   // -- 1. Clínica -----------------------------------------------------------
 
   async issueCredential(req: IssueRequest): Promise<Credential> {
+    if (!this.issuerSecret) {
+      throw new Error('Esta instancia no tiene el secreto del emisor: no puede llamar issueLicense');
+    }
     const secret = randomBytes32();
     const licenseTypeBytes = toBytes32(req.licenseType);
     const periodBytes = encodePeriod(req.periodStart, req.periodEnd);
     const commitment = pureCircuits.computeCommitment(secret, licenseTypeBytes, periodBytes);
 
-    const contract = await this.connectReadOnly();
+    const contract = await findDeployedContract(this.providers, {
+      contractAddress: this.contractAddress,
+      compiledContract: bindContract(makeIssuerWitnesses(this.issuerSecret)),
+    });
     await contract.callTx.issueLicense(commitment);
 
     // req.diagnosisNote se descarta acá: nunca se guarda, nunca se transmite.

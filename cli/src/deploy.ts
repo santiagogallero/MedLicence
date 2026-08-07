@@ -2,11 +2,18 @@
  * Deploy manual + smoke test end-to-end contra Preview real (sin mock).
  *
  * Uso:
- *   WALLET_SEED=<64 hex chars, opcional> npm run cli
+ *   WALLET_SEED=<64 hex chars, opcional> ISSUER_SECRET=<64 hex chars, opcional> npm run cli
  *
  * Sin WALLET_SEED genera una wallet nueva y hay que cargarla con tDUST del
  * faucet antes de continuar (el script espera confirmación por consola).
  * Con WALLET_SEED reusa la misma wallet/dirección entre corridas.
+ *
+ * ISSUER_SECRET es el secreto de la clínica (nunca sale on-chain, solo su
+ * hash queda público como `authorizedIssuer`). Sin él se genera uno nuevo Y
+ * SE DEPLOYA UN CONTRATO NUEVO, porque `authorizedIssuer` queda fijado para
+ * siempre en el constructor — reusar el contrato con otro secreto significa
+ * que issueLicense va a rechazar todo. Guardalo si querés emitir de nuevo
+ * en el mismo contrato más adelante.
  *
  * Guarda la dirección del contrato en `.contract-address` (gitignored) y,
  * si ya existe, se conecta a ese contrato en vez de deployar uno nuevo.
@@ -17,7 +24,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pino from 'pino';
 
-import { LicenseAlreadyUsedError, MidnightMedLicenseApi, toBytes32 } from '@medlicense/api';
+import { fromHex, LicenseAlreadyUsedError, MidnightMedLicenseApi, randomBytes32, toHex } from '@medlicense/api';
 
 import { previewEnvironment } from './config.js';
 import { configureProviders } from './providers.js';
@@ -35,6 +42,15 @@ async function loadSavedAddress(): Promise<string | null> {
   }
 }
 
+function loadIssuerSecret(): Uint8Array {
+  if (process.env.ISSUER_SECRET) return fromHex(process.env.ISSUER_SECRET);
+  const secret = randomBytes32();
+  logger.warn(
+    `Generé un ISSUER_SECRET nuevo: ${toHex(secret)} — guardalo (env ISSUER_SECRET) si querés volver a emitir en este mismo contrato.`,
+  );
+  return secret;
+}
+
 async function main() {
   const wallet = await MidnightWalletProvider.build(logger, previewEnvironment, process.env.WALLET_SEED);
   await wallet.start();
@@ -49,11 +65,12 @@ async function main() {
   await wallet.ensureDustGenerated();
 
   const providers = configureProviders(wallet);
+  const issuerSecret = loadIssuerSecret();
 
   const savedAddress = await loadSavedAddress();
   const api = savedAddress
-    ? await MidnightMedLicenseApi.connect(providers, savedAddress)
-    : await MidnightMedLicenseApi.deploy(providers, toBytes32('clinica-demo'));
+    ? await MidnightMedLicenseApi.connect(providers, savedAddress, issuerSecret)
+    : await MidnightMedLicenseApi.deploy(providers, issuerSecret);
 
   if (!savedAddress) {
     await writeFile(addressFile, api.address, 'utf8');

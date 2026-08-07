@@ -38,8 +38,15 @@ witness localSecret(): Bytes<32>;
 /// Camino de Merkle desde la hoja del trabajador hasta el root.
 witness merklePath(): MerkleTreePath<10, Bytes<32>>;
 
+/// Secreto de la clínica. Nunca sale de su backend; `authorizedIssuer`
+/// guarda solo su hash público (ver computeIssuerPublicKey).
+witness issuerSecretKey(): Bytes<32>;
+
 // --- Constructor -----------------------------------------------------------
 
+/// `issuer` es la clave PÚBLICA del emisor (= computeIssuerPublicKey(secreto)),
+/// calculada off-chain por la clínica. El secreto correspondiente nunca se
+/// manda on-chain — solo se prueba que se lo conoce, en cada issueLicense.
 constructor(issuer: Bytes<32>) {
   authorizedIssuer = disclose(issuer);
 }
@@ -64,10 +71,25 @@ export pure circuit computeNullifier(secret: Bytes<32>): Bytes<32> {
   return persistentHash<Vector<2, Bytes<32>>>([pad(32, "medlic:null:"), secret]);
 }
 
+/// Clave pública del emisor = hash(secreto). Se calcula off-chain (o acá
+/// mismo) para armar el argumento del constructor sin exponer el secreto.
+export pure circuit computeIssuerPublicKey(secret: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "medlic:issuer:"), secret]);
+}
+
 // --- Circuito 1: la clínica emite -----------------------------------------
 
 /// El commitment es público a propósito: es un hash, no revela nada.
+/// Antes NO había ningún chequeo acá — cualquier wallet podía insertar
+/// commitments falsos en el árbol. Ahora hace falta probar que se conoce
+/// el secreto detrás de `authorizedIssuer`, igual que el trabajador prueba
+/// su credencial en proveLicense.
 export circuit issueLicense(commitment: Bytes<32>): [] {
+  const issuerSecret = issuerSecretKey();
+  assert(
+    computeIssuerPublicKey(issuerSecret) == authorizedIssuer,
+    "No autorizado a emitir licencias"
+  );
   licenses.insert(disclose(commitment));
 }
 
