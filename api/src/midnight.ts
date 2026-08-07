@@ -72,8 +72,6 @@ function bindContract(witnesses: ContractWitnesses<PrivateState>) {
  * deployContract/findDeployedContract para contratos sin estado privado real.
  */
 type PrivateState = undefined;
-const NO_PRIVATE_STATE: PrivateState = undefined;
-const PRIVATE_STATE_ID = 'medlicense';
 
 export class LicenseAlreadyUsedError extends Error {
   constructor() {
@@ -141,8 +139,6 @@ export class MidnightMedLicenseApi implements MedLicenseApi {
   ): Promise<MidnightMedLicenseApi> {
     const deployed = await deployContract(providers, {
       compiledContract: bindContract(unusedWitnesses),
-      privateStateId: PRIVATE_STATE_ID,
-      initialPrivateState: NO_PRIVATE_STATE,
       args: [issuer],
     });
     return new MidnightMedLicenseApi(providers, deployed.deployTxData.public.contractAddress);
@@ -156,8 +152,6 @@ export class MidnightMedLicenseApi implements MedLicenseApi {
     return findDeployedContract(this.providers, {
       contractAddress: this.contractAddress,
       compiledContract: bindContract(unusedWitnesses),
-      privateStateId: PRIVATE_STATE_ID,
-      initialPrivateState: NO_PRIVATE_STATE,
     });
   }
 
@@ -195,8 +189,6 @@ export class MidnightMedLicenseApi implements MedLicenseApi {
     const contract = await findDeployedContract(this.providers, {
       contractAddress: this.contractAddress,
       compiledContract: bindContract(makeProveWitnesses(secret, licenseTypeBytes, periodBytes)),
-      privateStateId: PRIVATE_STATE_ID,
-      initialPrivateState: NO_PRIVATE_STATE,
     });
 
     try {

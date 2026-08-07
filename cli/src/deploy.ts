@@ -64,12 +64,16 @@ async function main() {
 
   // --- Smoke test: emitir, probar, verificar, y confirmar que el reuso falla ---
 
+  const today = new Date();
+  const in7Days = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const isoDate = (d: Date) => d.toISOString().slice(0, 10);
+
   logger.info('Emitiendo credencial de prueba...');
   const credential = await api.issueCredential({
     issuerId: 'clinica-demo',
     licenseType: 'MEDICA',
-    periodStart: '2026-08-01',
-    periodEnd: '2026-08-07',
+    periodStart: isoDate(today),
+    periodEnd: isoDate(in7Days),
     diagnosisNote: 'esto nunca debería salir de acá',
   });
   logger.info(`Credencial emitida. Commitment: ${credential.commitment}`);
