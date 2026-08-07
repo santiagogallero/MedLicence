@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Check, HeartPulse, Laptop, ShieldCheck } from 'lucide-react'
 import { ApiError, getLeaveRequest, type LeaveRequest } from './api'
-import { SCREEN_ENTER_FROM, SCREEN_ENTER_TO, SCREEN_TRANSITION, formatPeriod } from './format'
+import { LICENSE_TYPE_LABELS, SCREEN_ENTER_FROM, SCREEN_ENTER_TO, SCREEN_TRANSITION, formatPeriod } from './format'
 import { ErrorNote, ProcessingPanel, StatusBadge } from './shared'
 import './App.css'
 
@@ -127,6 +127,13 @@ function WorkerRequest({ token }: { token: string }) {
                       Tu médico ya certificó y probó tu licencia. Tu empresa
                       ya puede confirmarla — vos no tenés que hacer nada más.
                     </span>
+                    {request.licenseType && (
+                      <span className="certificate-summary">
+                        {LICENSE_TYPE_LABELS[request.licenseType]}
+                        {' · '}
+                        {formatPeriod(request.periodStart, request.periodEnd)}
+                      </span>
+                    )}
                   </div>
                 </motion.div>
               )}
@@ -148,9 +155,13 @@ function WorkerRequest({ token }: { token: string }) {
                   </motion.span>
                   <div>
                     <strong>Tu empresa confirmó el certificado</strong>
-                    <span>
-                      Período: {formatPeriod(request.periodStart, request.periodEnd)}
-                    </span>
+                    {request.licenseType && (
+                      <span className="certificate-summary">
+                        {LICENSE_TYPE_LABELS[request.licenseType]}
+                        {' · '}
+                        {formatPeriod(request.periodStart, request.periodEnd)}
+                      </span>
+                    )}
                   </div>
                 </motion.div>
               )}
