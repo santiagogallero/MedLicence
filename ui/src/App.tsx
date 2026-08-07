@@ -73,6 +73,53 @@ const sha256 = async (value: string) => {
 const shortHash = (value: string) =>
   value ? `${value.slice(0, 12)}...${value.slice(-10)}` : '—'
 
+const isoDate = (d: Date) => d.toISOString().slice(0, 10)
+const todayIso = () => isoDate(new Date())
+const daysFromNowIso = (days: number) =>
+  isoDate(new Date(Date.now() + days * 24 * 60 * 60 * 1000))
+
+/**
+ * Backend real (cli/src/server.ts), no el mock local. Requiere levantarlo
+ * aparte: WALLET_SEED=<seed fondeada> npm run server --workspace=@medlicense/cli
+ */
+const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:4787'
+
+type RealCredential = {
+  secret: string
+  commitment: string
+  issuerId: string
+  licenseType: string
+  periodStart: string
+  periodEnd: string
+  issuedAt: string
+}
+
+type RealProof = {
+  proofBytes: string
+  nullifier: string
+  publicInputs: {
+    issuerRoot: string
+    licenseType: string
+    periodStart: string
+    periodEnd: string
+  }
+}
+
+async function apiCall<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  const data = await res.json()
+  if (!res.ok) {
+    throw Object.assign(new Error(data.message ?? 'Error de red'), {
+      code: data.error as string | undefined,
+    })
+  }
+  return data as T
+}
+
 const phaseIcons = [
   Fingerprint,
   Stethoscope,
@@ -90,11 +137,16 @@ function App() {
   const [verified, setVerified] = useState(false)
   const [employee, setEmployee] = useState('Valentino Arias')
   const [company, SetCompany] = useState ('Empresa demo LATAM')
-  const [startDate, setStartDate] = useState('2026-03-01')
-  const [endDate, setEndDate] = useState('2026-03-10')
+  const [startDate, setStartDate] = useState(todayIso())
+  const [endDate, setEndDate] = useState(daysFromNowIso(7))
   const [diagnosis, setDiagnosis] = useState('Reposo médico indicado')
   const [credential, setCredential] =
     useState<CredentialData>(emptyCredential)
+  const [realCredential, setRealCredential] = useState<RealCredential | null>(
+    null,
+  )
+  const [realProof, setRealProof] = useState<RealProof | null>(null)
+  const [apiError, setApiError] = useState('')
 
   const t = translations[language]
 
@@ -143,64 +195,93 @@ function App() {
 
   const issueCredential = async () => {
     setLoading('issue')
+    setApiError('')
 
-    const commitment = await sha256(
-      `${credential.secretHash}|MEDICAL_LEAVE|${startDate}|${endDate}`,
-    )
+    try {
+      const { credential: issued, issuerRoot } = await apiCall<{
+        credential: RealCredential
+        issuerRoot: string
+      }>('/issue', {
+        issuerId: 'clinica-demo',
+        licenseType: 'MEDICA',
+        periodStart: startDate,
+        periodEnd: endDate,
+        diagnosisNote: diagnosis,
+      })
 
-    await sleep(700)
-
-    const merklePath = [
-      randomHex(16),
-      randomHex(16),
-      randomHex(16),
-      randomHex(16),
-    ]
-
-    const merkleRoot = await sha256(
-      `${commitment}|${merklePath.join('|')}`,
-    )
-
-    setCredential((current) => ({
-      ...current,
-      commitment,
-      merkleRoot,
-      merklePath,
-    }))
-
-    await sleep(650)
-    setLoading('')
+      setRealCredential(issued)
+      setCredential((current) => ({
+        ...current,
+        secret: issued.secret,
+        commitment: issued.commitment,
+        merkleRoot: issuerRoot,
+      }))
+    } catch (err) {
+      setApiError(
+        err instanceof Error ? err.message : 'No se pudo emitir la credencial',
+      )
+    } finally {
+      setLoading('')
+    }
   }
 
   const generateProof = async () => {
     setLoading('proof')
+    setApiError('')
 
-    const proof = await sha256(
-      `${credential.secret}|${credential.commitment}|${credential.merklePath.join('|')}`,
-    )
+    try {
+      if (!realCredential) throw new Error('Primero hay que emitir la credencial')
 
-    const nullifier = await sha256(
-      `${credential.secret}|${credential.commitment}`,
-    )
+      const { proof } = await apiCall<{ proof: RealProof }>('/prove', {
+        credential: realCredential,
+      })
 
-    await sleep(1250)
-
-    setCredential((current) => ({
-      ...current,
-      proof: `${proof}${randomHex(32).slice(2)}`,
-      nullifier,
-    }))
-
-    setLoading('')
+      setRealProof(proof)
+      setCredential((current) => ({
+        ...current,
+        proof: proof.proofBytes,
+        nullifier: proof.nullifier,
+        merkleRoot: proof.publicInputs.issuerRoot,
+      }))
+    } catch (err) {
+      const code = (err as { code?: string }).code
+      setApiError(
+        code === 'ALREADY_USED'
+          ? 'Esta licencia ya fue presentada — el nullifier ya está gastado on-chain.'
+          : err instanceof Error
+            ? err.message
+            : 'No se pudo generar la prueba',
+      )
+    } finally {
+      setLoading('')
+    }
   }
 
   const verifyCredential = async () => {
     setLoading('verify')
     setVerified(false)
-    await sleep(1800)
-    setVerified(true)
-    setPhase(5)
-    setLoading('')
+    setApiError('')
+
+    try {
+      if (!realProof) throw new Error('Primero hay que generar la prueba')
+
+      const { result } = await apiCall<{
+        result: { valid: boolean; reason?: string }
+      }>('/verify', { proof: realProof })
+
+      if (result.valid) {
+        setVerified(true)
+        setPhase(5)
+      } else {
+        setApiError(`Verificación rechazada: ${result.reason ?? 'INVALID_PROOF'}`)
+      }
+    } catch (err) {
+      setApiError(
+        err instanceof Error ? err.message : 'No se pudo verificar la prueba',
+      )
+    } finally {
+      setLoading('')
+    }
   }
 
   const restartDemo = () => {
@@ -209,6 +290,9 @@ function App() {
     setLoading('')
     setCopied('')
     setCredential(emptyCredential)
+    setRealCredential(null)
+    setRealProof(null)
+    setApiError('')
   }
 
   const nextPhase = () =>
@@ -327,6 +411,23 @@ function App() {
           )
         })}
       </section>
+
+      {apiError && (
+        <div
+          style={{
+            margin: '0 auto 16px',
+            maxWidth: 640,
+            padding: '12px 16px',
+            borderRadius: 10,
+            background: 'rgba(220, 38, 38, 0.12)',
+            border: '1px solid rgba(220, 38, 38, 0.4)',
+            color: '#fca5a5',
+            fontSize: 14,
+          }}
+        >
+          {apiError}
+        </div>
+      )}
 
       <section className="workspace">
         <AnimatePresence mode="wait">
