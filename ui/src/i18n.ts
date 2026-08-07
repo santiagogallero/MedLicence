@@ -5,6 +5,7 @@ export const translations = {
     language: 'ES',
     brandSubtitle: 'Credenciales médicas privadas',
     network: 'Midnight Network',
+    companyPortalCta: 'Portal de empresa',
     eyebrow: 'PRIVACIDAD MÉDICA VERIFICABLE',
     heroLine1: 'Validá la licencia.',
     heroLine2: 'Protegé el diagnóstico.',
@@ -90,6 +91,8 @@ export const translations = {
     proofReady: 'Prueba lista para compartir',
     qrDescription:
       'La empresa recibe este QR o link; nunca recibe el secreto ni el diagnóstico.',
+    proofValidatedSaved:
+      'Validada contra el contrato de la prueba · copia guardada en este dispositivo',
     openVerifier: 'Abrir portal de empresa',
     verifyEyebrow: 'ETAPAS 04–05 · EMPRESA / RELAYER',
     verifyTitle: 'Verificar licencia',
@@ -129,6 +132,7 @@ export const translations = {
     language: 'EN',
     brandSubtitle: 'Private medical credentials',
     network: 'Midnight Network',
+    companyPortalCta: 'Employer portal',
     eyebrow: 'VERIFIABLE MEDICAL PRIVACY',
     heroLine1: 'Validate the leave.',
     heroLine2: 'Protect the diagnosis.',
@@ -207,6 +211,8 @@ export const translations = {
     proofReady: 'Proof ready to share',
     qrDescription:
       'The employer receives this QR or link; never the secret or diagnosis.',
+    proofValidatedSaved:
+      'Validated against the proof contract · copy saved on this device',
     openVerifier: 'Open employer portal',
     verifyEyebrow: 'STAGES 04–05 · EMPLOYER / RELAYER',
     verifyTitle: 'Verify medical leave',
@@ -246,6 +252,7 @@ export const translations = {
     language: 'PT',
     brandSubtitle: 'Credenciais médicas privadas',
     network: 'Midnight Network',
+    companyPortalCta: 'Portal da empresa',
     eyebrow: 'PRIVACIDADE MÉDICA VERIFICÁVEL',
     heroLine1: 'Valide a licença.',
     heroLine2: 'Proteja o diagnóstico.',
@@ -324,6 +331,8 @@ export const translations = {
     proofReady: 'Prova pronta para compartilhar',
     qrDescription:
       'A empresa recebe este QR ou link; nunca o segredo ou diagnóstico.',
+    proofValidatedSaved:
+      'Validada contra o contrato da prova · cópia salva neste dispositivo',
     openVerifier: 'Abrir portal da empresa',
     verifyEyebrow: 'ETAPAS 04–05 · EMPRESA / RELAYER',
     verifyTitle: 'Verificar licença',

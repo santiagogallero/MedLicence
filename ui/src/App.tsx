@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { QRCodeSVG } from 'qrcode.react'
 import {
@@ -27,6 +27,13 @@ import {
   Zap,
 } from 'lucide-react'
 import { translations, type Language } from './i18n'
+import {
+  PROOF_PROTOCOL,
+  PROOF_TYPE_MEDICAL_LEAVE,
+  isValidProofPayload,
+  saveProof,
+  type ProofPayload,
+} from './proof'
 import './App.css'
 
 type Phase = 0 | 1 | 2 | 3 | 4 | 5
@@ -89,7 +96,7 @@ function App() {
   const [copied, setCopied] = useState('')
   const [verified, setVerified] = useState(false)
   const [employee, setEmployee] = useState('Valentino Arias')
-  const [company, SetCompany] = useState ('Empresa demo LATAM')
+  const [company, setCompany] = useState('Empresa demo LATAM')
   const [startDate, setStartDate] = useState('2026-03-01')
   const [endDate, setEndDate] = useState('2026-03-10')
   const [diagnosis, setDiagnosis] = useState('Reposo médico indicado')
@@ -98,19 +105,18 @@ function App() {
 
   const t = translations[language]
 
-  const sharePayload = useMemo(
-    () =>
-      JSON.stringify({
-        protocol: 'MedLicence/1.0',
-        proof: credential.proof,
-        nullifier: credential.nullifier,
-        merkleRoot: credential.merkleRoot,
-        disclosed: {
-          type: 'MEDICAL_LEAVE',
-          startDate,
-          endDate,
-        },
-      }),
+  const proofPayload = useMemo<ProofPayload>(
+    () => ({
+      protocol: PROOF_PROTOCOL,
+      proof: credential.proof,
+      nullifier: credential.nullifier,
+      merkleRoot: credential.merkleRoot,
+      disclosed: {
+        type: PROOF_TYPE_MEDICAL_LEAVE,
+        startDate,
+        endDate,
+      },
+    }),
     [
       credential.merkleRoot,
       credential.nullifier,
@@ -119,6 +125,20 @@ function App() {
       endDate,
     ],
   )
+
+  const sharePayload = useMemo(
+    () => JSON.stringify(proofPayload),
+    [proofPayload],
+  )
+
+  // proofPayload only satisfies the contract once proof/nullifier/merkleRoot
+  // are populated (hex fields are empty strings until generateProof runs),
+  // so this both validates and gates when the copy actually gets persisted.
+  const proofValidated = isValidProofPayload(proofPayload)
+
+  useEffect(() => {
+    if (proofValidated) saveProof(proofPayload)
+  }, [proofValidated, proofPayload])
 
   const copyValue = async (label: string, value: string) => {
     await navigator.clipboard.writeText(value)
@@ -214,6 +234,11 @@ function App() {
   const nextPhase = () =>
     setPhase((current) => Math.min(current + 1, 5) as Phase)
 
+  const goToCompanyPortal = () => {
+    window.location.hash = '/empresa'
+    window.location.reload()
+  }
+
   return (
     <main className="app-shell">
       <div className="ambient ambient-one" />
@@ -236,6 +261,17 @@ function App() {
             {t.network}
           </div>
 
+          <button
+            className="company-portal-cta"
+            onClick={goToCompanyPortal}
+            aria-label={t.companyPortalCta}
+          >
+            <Building2 size={14} />
+            <span className="company-portal-cta-label">
+              {t.companyPortalCta}
+            </span>
+          </button>
+
           <label className="language-select">
             <Globe2 size={15} />
             <select
@@ -254,27 +290,52 @@ function App() {
 
       <motion.section
         className="hero"
-        initial={{ opacity: 0, y: 18 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.65 }}
+        initial="hidden"
+        animate="show"
+        variants={{
+          hidden: {},
+          show: { transition: { staggerChildren: 0.1, delayChildren: 0.05 } },
+        }}
       >
         <div className="hero-copy">
-          <span className="eyebrow">
+          <motion.span
+            className="eyebrow"
+            variants={{
+              hidden: { opacity: 0, y: 14 },
+              show: { opacity: 1, y: 0, transition: { duration: 0.5 } },
+            }}
+          >
             <Sparkles size={13} />
             {t.eyebrow}
-          </span>
+          </motion.span>
 
-          <h1>
+          <motion.h1
+            variants={{
+              hidden: { opacity: 0, y: 18 },
+              show: { opacity: 1, y: 0, transition: { duration: 0.55 } },
+            }}
+          >
             {t.heroLine1}
             <br />
             <span>{t.heroLine2}</span>
-          </h1>
+          </motion.h1>
 
-          <p>{t.heroDescription}</p>
+          <motion.p
+            variants={{
+              hidden: { opacity: 0, y: 14 },
+              show: { opacity: 1, y: 0, transition: { duration: 0.5 } },
+            }}
+          >
+            {t.heroDescription}
+          </motion.p>
         </div>
 
         <motion.div
           className="privacy-card"
+          variants={{
+            hidden: { opacity: 0, y: 22, scale: 0.97 },
+            show: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.55 } },
+          }}
           whileHover={{ y: -5, scale: 1.01 }}
           transition={{ type: 'spring', stiffness: 260, damping: 20 }}
         >
@@ -745,6 +806,12 @@ function App() {
                         <code>
                           {shortHash(credential.nullifier)}
                         </code>
+                        {proofValidated && (
+                          <div className="contract-check">
+                            <ShieldCheck size={13} />
+                            {t.proofValidatedSaved}
+                          </div>
+                        )}
                       </div>
                     </motion.div>
                   )}
@@ -809,7 +876,7 @@ function App() {
                           <input
                             className="company-input"
                             value={company}
-                            onChange={(event) => SetCompany(event.target.value)}
+                            onChange={(event) => setCompany(event.target.value)}
                             aria-label={t.company}
                           />
                         </div>
