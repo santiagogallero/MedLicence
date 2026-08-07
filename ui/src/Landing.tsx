@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Briefcase, Check, HeartPulse, ShieldCheck, UserRound } from 'lucide-react'
+import { SCREEN_ENTER_FROM, SCREEN_ENTER_TO, SCREEN_TRANSITION } from './format'
 import './App.css'
 
 function goTo(hash: string) {
@@ -25,9 +26,9 @@ function Landing() {
 
       <motion.section
         className="landing-hero"
-        initial={{ opacity: 0, y: 18 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
+        initial={SCREEN_ENTER_FROM}
+        animate={SCREEN_ENTER_TO}
+        transition={SCREEN_TRANSITION}
       >
         <span className="landing-pill">
           <ShieldCheck size={13} />

@@ -31,11 +31,23 @@ import {
   type LeaveRequest,
   type VerificationResult,
 } from './api'
-import { LICENSE_TYPE_LABELS, formatPeriod } from './format'
-import { ErrorNote, StatusBadge } from './shared'
+import {
+  LICENSE_TYPE_LABELS,
+  SCREEN_ENTER_FROM,
+  SCREEN_ENTER_TO,
+  SCREEN_TRANSITION,
+  formatPeriod,
+} from './format'
+import { ErrorNote, ProcessingPanel, StatusBadge } from './shared'
 import './App.css'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+const VERIFY_MESSAGES = [
+  'Confirmando el certificado...',
+  'Esto puede tardar unos segundos...',
+  'Ya casi termina...',
+]
 
 function goTo(hash: string) {
   window.location.hash = hash
@@ -118,15 +130,16 @@ function Auth({ onAuthed }: { onAuthed: (company: Company) => void }) {
         </button>
       </header>
 
-      <button className="company-back" onClick={() => goTo('/')}>
+      <button className="company-back-floating" onClick={() => goTo('/')}>
         <ArrowLeft size={15} />
         Volver
       </button>
 
       <motion.section
         className="company-registration"
-        initial={{ opacity: 0, y: 22 }}
-        animate={{ opacity: 1, y: 0 }}
+        initial={SCREEN_ENTER_FROM}
+        animate={SCREEN_ENTER_TO}
+        transition={SCREEN_TRANSITION}
       >
         <div className="registration-copy">
           <span className="eyebrow">
@@ -162,7 +175,7 @@ function Auth({ onAuthed }: { onAuthed: (company: Company) => void }) {
                 <label className={`company-field ${errors.name ? 'has-error' : ''}`}>
                   <span>
                     Nombre de la empresa
-                    <b>Requerido</b>
+                    <span className="required-mark">*</span>
                   </span>
                   <div>
                     <Building2 size={16} />
@@ -180,7 +193,7 @@ function Auth({ onAuthed }: { onAuthed: (company: Company) => void }) {
                 <label className={`company-field ${errors.taxId ? 'has-error' : ''}`}>
                   <span>
                     Identificador fiscal
-                    <b>Requerido</b>
+                    <span className="required-mark">*</span>
                   </span>
                   <div>
                     <ReceiptText size={16} />
@@ -198,7 +211,7 @@ function Auth({ onAuthed }: { onAuthed: (company: Company) => void }) {
                 <label className={`company-field ${errors.country ? 'has-error' : ''}`}>
                   <span>
                     País
-                    <b>Requerido</b>
+                    <span className="required-mark">*</span>
                   </span>
                   <div>
                     <MapPin size={16} />
@@ -215,10 +228,12 @@ function Auth({ onAuthed }: { onAuthed: (company: Company) => void }) {
               </>
             )}
 
-            <label className={`company-field ${errors.email ? 'has-error' : ''}`}>
+            <label
+              className={`company-field ${errors.email ? 'has-error' : ''} ${mode === 'login' ? 'full' : ''}`}
+            >
               <span>
                 Correo corporativo
-                <b>Requerido</b>
+                <span className="required-mark">*</span>
               </span>
               <div>
                 <Mail size={16} />
@@ -234,10 +249,10 @@ function Auth({ onAuthed }: { onAuthed: (company: Company) => void }) {
               {errors.email && <span className="company-field-error">{errors.email}</span>}
             </label>
 
-            <label className={`company-field ${errors.password ? 'has-error' : ''}`}>
+            <label className={`company-field full ${errors.password ? 'has-error' : ''}`}>
               <span>
                 Contraseña
-                <b>Requerido</b>
+                <span className="required-mark">*</span>
               </span>
               <div>
                 <Lock size={16} />
@@ -418,7 +433,7 @@ function Dashboard({ company, onLogout }: { company: Company; onLogout: () => vo
 
         <div className="company-header-actions">
           <span className="company-account">{company.name}</span>
-          <button className="company-back" onClick={onLogout}>
+          <button className="company-logout" onClick={onLogout}>
             <LogOut size={15} />
             Cerrar sesión
           </button>
@@ -427,8 +442,9 @@ function Dashboard({ company, onLogout }: { company: Company; onLogout: () => vo
 
       <motion.section
         className="company-dashboard"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
+        initial={SCREEN_ENTER_FROM}
+        animate={SCREEN_ENTER_TO}
+        transition={SCREEN_TRANSITION}
       >
         <div className="company-dashboard-heading">
           <div>
@@ -544,33 +560,30 @@ function Dashboard({ company, onLogout }: { company: Company; onLogout: () => vo
                       </div>
 
                       {item.status === 'proven' && (
-                        <button
-                          className="primary-button leave-verify-button"
-                          onClick={() => verify(item.token)}
-                          disabled={verifyingToken === item.token}
-                        >
-                          {verifyingToken === item.token ? (
-                            <>
-                              <span className="spinner" />
-                              Confirmando...
-                            </>
-                          ) : (
-                            <>
-                              <Check size={15} />
-                              Verificar
-                            </>
-                          )}
-                        </button>
+                        verifyingToken === item.token ? (
+                          <ProcessingPanel messages={VERIFY_MESSAGES} />
+                        ) : (
+                          <button
+                            className="primary-button leave-verify-button"
+                            onClick={() => verify(item.token)}
+                          >
+                            <Check size={15} />
+                            Verificar
+                          </button>
+                        )
                       )}
 
                       {verifyResults[item.token] && (
-                        <div
+                        <motion.div
                           className={`verify-result ${verifyResults[item.token].valid ? 'valid' : 'invalid'}`}
+                          initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          transition={SCREEN_TRANSITION}
                         >
                           {verifyResults[item.token].valid
                             ? `Certificado auténtico · ${formatPeriod(verifyResults[item.token].periodStart, verifyResults[item.token].periodEnd)}`
                             : 'No se pudo confirmar este certificado.'}
-                        </div>
+                        </motion.div>
                       )}
                     </li>
                   ))}
