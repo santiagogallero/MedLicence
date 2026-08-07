@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Briefcase, Check, HeartPulse, ShieldCheck, UserRound } from 'lucide-react'
+import { ApiError, selfRequestLeave } from './api'
+import { ErrorNote } from './shared'
 import './App.css'
 
 function goTo(hash: string) {
@@ -9,7 +11,35 @@ function goTo(hash: string) {
 }
 
 function Landing() {
-  const [showWorkerHint, setShowWorkerHint] = useState(false)
+  const [showWorkerForm, setShowWorkerForm] = useState(false)
+  const [email, setEmail] = useState('')
+  const [companyOptions, setCompanyOptions] = useState<
+    { companyId: string; companyName?: string }[] | null
+  >(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const startSelfRequest = async (companyId?: string) => {
+    if (!email.trim()) return
+    setLoading(true)
+    setError('')
+    try {
+      const result = await selfRequestLeave(email.trim(), companyId)
+      if ('needsCompanySelection' in result) {
+        setCompanyOptions(result.options)
+      } else {
+        goTo(`/solicitud/${result.token}`)
+      }
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : 'No se pudo iniciar el trámite. Probá de nuevo.',
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
     <main className="landing-shell">
@@ -63,19 +93,69 @@ function Landing() {
             </p>
             <button
               className="secondary-button"
-              onClick={() => setShowWorkerHint((current) => !current)}
+              onClick={() => setShowWorkerForm((current) => !current)}
             >
-              No tengo un link
+              No tengo un link (urgencia)
             </button>
 
-            {showWorkerHint && (
+            {showWorkerForm && (
               <motion.div
                 className="role-card-hint"
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
               >
-                Tu empresa te lo tiene que enviar primero. Pedile a alguien de
-                Recursos Humanos que te invite desde el panel de empresa.
+                {companyOptions ? (
+                  <>
+                    <p className="section-description">
+                      Ese email está cargado en más de una empresa. ¿En cuál trabajás?
+                    </p>
+                    {companyOptions.map((option) => (
+                      <button
+                        key={option.companyId}
+                        className="secondary-button"
+                        style={{ marginTop: 8 }}
+                        disabled={loading}
+                        onClick={() => startSelfRequest(option.companyId)}
+                      >
+                        {option.companyName ?? option.companyId}
+                      </button>
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    <p className="section-description">
+                      Si tu empresa ya te cargó como empleado, podés iniciar el
+                      trámite vos mismo con tu email — no hace falta esperar el link.
+                    </p>
+                    <label className="field full">
+                      <span>Tu email</span>
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={(event) => setEmail(event.target.value)}
+                        onKeyDown={(event) => event.key === 'Enter' && startSelfRequest()}
+                        placeholder="vos@empresa.com"
+                        autoFocus
+                      />
+                    </label>
+                    {error && <ErrorNote message={error} />}
+                    <button
+                      className="primary-button"
+                      style={{ marginTop: 8 }}
+                      disabled={loading || !email.trim()}
+                      onClick={() => startSelfRequest()}
+                    >
+                      {loading ? (
+                        <>
+                          <span className="spinner" />
+                          Buscando...
+                        </>
+                      ) : (
+                        'Iniciar trámite'
+                      )}
+                    </button>
+                  </>
+                )}
               </motion.div>
             )}
           </motion.div>

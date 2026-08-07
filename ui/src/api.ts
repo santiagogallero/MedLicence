@@ -234,6 +234,19 @@ export function generateProofForRequest(token: string) {
   })
 }
 
+// -- Trabajador: autogestión para urgencias (sin esperar el link de RRHH) ----
+
+export type SelfRequestResult =
+  | { token: string; link: string; employee: Employee }
+  | { needsCompanySelection: true; options: { companyId: string; companyName?: string }[] }
+
+export function selfRequestLeave(email: string, companyId?: string) {
+  return request<SelfRequestResult>('/employees/self-request', {
+    method: 'POST',
+    body: companyId ? { email, companyId } : { email },
+  })
+}
+
 // -- Médico -------------------------------------------------------------------
 
 export function getDoctorPending() {
