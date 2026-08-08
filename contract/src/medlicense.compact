@@ -1,0 +1,118 @@
+// medlicense.compact — licencias médicas verificables sin revelar diagnóstico.
+//
+// PRIMER DRAFT. Todavía no pasó por `compact compile` (no tengo el compiler
+// disponible acá). Compilalo, y si tira errores de sintaxis pasámelos y lo
+// arreglo — la estructura es la correcta, lo que puede fallar son nombres
+// exactos de la stdlib.
+//
+// Modelo:
+//   - La clínica inserta commitments en un Merkle tree. Solo el root es público.
+//   - El trabajador prueba, en ZK, que conoce el secreto de ALGUNA hoja del
+//     tree, sin decir cuál. Por eso hace falta el Merkle tree y no un Map:
+//     con un Map, buscar la credencial revelaría de quién es.
+//   - El nullifier se deriva del secreto. Se gasta al usarse → no hay reuso.
+//   - El diagnóstico no aparece en ningún lado. Nunca entra al circuito.
+
+pragma language_version >= 0.19;
+
+import CompactStandardLibrary;
+
+// --- Estado on-chain -------------------------------------------------------
+
+/// Commitments emitidos. Depth 10 → hasta 1024 licencias, de sobra para la demo.
+/// Historic: guarda roots pasados, así una prueba generada hace un rato sigue
+/// siendo válida aunque la clínica haya emitido otra licencia mientras tanto.
+export ledger licenses: HistoricMerkleTree<10, Bytes<32>>;
+
+/// Nullifiers ya gastados. Es lo que impide presentar la misma licencia dos veces.
+export ledger spentNullifiers: Set<Bytes<32>>;
+
+/// Emisor autorizado (MVP: uno solo; multi-emisor sería un Map de issuers).
+export ledger authorizedIssuer: Bytes<32>;
+
+// --- Estado privado (vive en el dispositivo, nunca on-chain) ---------------
+
+/// Secreto del trabajador, entregado por el médico al emitir.
+witness localSecret(): Bytes<32>;
+
+/// Camino de Merkle desde la hoja del trabajador hasta el root.
+witness merklePath(): MerkleTreePath<10, Bytes<32>>;
+
+/// Secreto de la clínica. Nunca sale de su backend; `authorizedIssuer`
+/// guarda solo su hash público (ver computeIssuerPublicKey).
+witness issuerSecretKey(): Bytes<32>;
+
+// --- Constructor -----------------------------------------------------------
+
+/// `issuer` es la clave PÚBLICA del emisor (= computeIssuerPublicKey(secreto)),
+/// calculada off-chain por la clínica. El secreto correspondiente nunca se
+/// manda on-chain — solo se prueba que se lo conoce, en cada issueLicense.
+constructor(issuer: Bytes<32>) {
+  authorizedIssuer = disclose(issuer);
+}
+
+// --- Helpers ---------------------------------------------------------------
+
+/// commitment = H(secreto, tipo, periodo). Determinístico: la clínica lo calcula
+/// al emitir y el trabajador lo recalcula dentro del circuito al probar.
+/// `export pure` (no toca ledger ni witness) → el compilador lo expone en
+/// `pureCircuits` del lado TS, así api/ calcula el mismo hash sin reimplementarlo.
+export pure circuit computeCommitment(
+  secret: Bytes<32>,
+  licenseType: Bytes<32>,
+  period: Bytes<32>
+): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([secret, licenseType, period]);
+}
+
+/// El nullifier depende solo del secreto → una credencial, un uso.
+/// El dominio ("medlic:null:") evita colisiones con el commitment.
+export pure circuit computeNullifier(secret: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "medlic:null:"), secret]);
+}
+
+/// Clave pública del emisor = hash(secreto). Se calcula off-chain (o acá
+/// mismo) para armar el argumento del constructor sin exponer el secreto.
+export pure circuit computeIssuerPublicKey(secret: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "medlic:issuer:"), secret]);
+}
+
+// --- Circuito 1: la clínica emite -----------------------------------------
+
+/// El commitment es público a propósito: es un hash, no revela nada.
+/// Antes NO había ningún chequeo acá — cualquier wallet podía insertar
+/// commitments falsos en el árbol. Ahora hace falta probar que se conoce
+/// el secreto detrás de `authorizedIssuer`, igual que el trabajador prueba
+/// su credencial en proveLicense.
+export circuit issueLicense(commitment: Bytes<32>): [] {
+  const issuerSecret = issuerSecretKey();
+  assert(
+    computeIssuerPublicKey(issuerSecret) == authorizedIssuer,
+    "No autorizado a emitir licencias"
+  );
+  licenses.insert(disclose(commitment));
+}
+
+// --- Circuito 2: el trabajador prueba, la empresa verifica -----------------
+
+/// `licenseType` y `period` son públicos: es lo único que la empresa ve.
+/// El secreto, el commitment y la posición en el tree quedan ocultos.
+export circuit proveLicense(licenseType: Bytes<32>, period: Bytes<32>): [] {
+  const secret = localSecret();
+  const path = merklePath();
+
+  // 1. Reconstruir el commitment desde el secreto privado.
+  const commitment = computeCommitment(secret, licenseType, period);
+
+  // 2. Probar que ese commitment está en el tree, sin decir dónde.
+  assert(
+    licenses.checkRoot(disclose(merkleTreePathRoot<10, Bytes<32>>(path))),
+    "Credencial no emitida por un emisor autorizado"
+  );
+  assert(path.leaf == commitment, "El camino no corresponde a esta credencial");
+
+  // 3. Quemar el nullifier.
+  const nullifier = computeNullifier(secret);
+  assert(!spentNullifiers.member(disclose(nullifier)), "Esta licencia ya fue presentada");
+  spentNullifiers.insert(disclose(nullifier));
+}

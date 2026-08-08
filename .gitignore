@@ -7,3 +7,8 @@ target/
 *.log
 .DS_Store
 .turbo/
+cli/.contract-address
+cli/*-private-state/
+cli/*-signing-keys/
+cli/midnight-level-db/
+*.tsbuildinfo

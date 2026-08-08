@@ -1,0 +1,27 @@
+{
+  "name": "medlicense",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "workspaces": [
+    "api",
+    "cli",
+    "ui"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "compact": "cd contract && compact compile src/medlicense.compact build",
+    "dev": "npm run dev --workspace=ui",
+    "cli": "npm run start --workspace=@medlicense/cli",
+    "typecheck": "tsc -b --pretty"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "overrides": {
+    "@midnight-ntwrk/onchain-runtime-v3": "3.0.0"
+  }
+}
