@@ -7,6 +7,7 @@
   "workspaces": [
     "api",
     "cli",
+    "contract",
     "ui"
   ],
   "engines": {
@@ -16,6 +17,7 @@
     "compact": "cd contract && compact compile src/medlicense.compact build",
     "dev": "npm run dev --workspace=ui",
     "cli": "npm run start --workspace=@medlicense/cli",
+    "test": "npm run test --workspace=@medlicense/contract",
     "typecheck": "tsc -b --pretty"
   },
   "devDependencies": {

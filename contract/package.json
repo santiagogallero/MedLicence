@@ -6,6 +6,12 @@
   "type": "module",
   "scripts": {
     "compile": "compact compile src/medlicense.compact build",
-    "clean": "rm -rf build"
+    "clean": "rm -rf build",
+    "pretest": "npm run compile",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@midnight-ntwrk/compact-runtime": "^0.16.0",
+    "vitest": "^3.2.4"
   }
 }
