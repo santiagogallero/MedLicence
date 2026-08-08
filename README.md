@@ -97,6 +97,20 @@ returns `ALREADY_USED`.
 4. Deploy to Preprod with a tDUST-funded wallet
 5. Flip the mock/real line in `api/src/index.ts`
 
+### Testing the contract
+
+`contract/test/medlicense.test.ts` runs the compiled circuits directly
+against `@midnight-ntwrk/compact-runtime` — no proof server, no indexer, no
+wallet. It covers the three properties that actually matter for this
+contract: only the authorized issuer can insert a commitment, a nullifier
+can't be replayed, and `proveLicense` really binds the proven commitment to
+the Merkle path (a forged path from a different, real credential is
+rejected).
+
+```bash
+npm test     # compiles the contract, then runs the suite (~1s)
+```
+
 ### Backend-only requirements
 
 - Node 22+
@@ -209,6 +223,20 @@ intento devuelve `ALREADY_USED`.
 3. Implementar `MidnightMedLicenseApi` en `api/src/` detrás de la misma interfaz
 4. Deploy a Preprod con una wallet con tDUST
 5. Cambiar la línea de mock/real en `api/src/index.ts`
+
+### Tests del contrato
+
+`contract/test/medlicense.test.ts` corre los circuitos compilados
+directamente contra `@midnight-ntwrk/compact-runtime` — sin proof server, sin
+indexer, sin wallet. Cubre las tres propiedades que le dan sentido al
+contrato: solo el emisor autorizado puede insertar un commitment, un
+nullifier no se puede reusar, y `proveLicense` realmente ata el commitment
+probado al camino de Merkle (un camino forjado de otra credencial real es
+rechazado).
+
+```bash
+npm test     # compila el contrato y corre la suite (~1s)
+```
 
 ### Requisitos solo para el back
 
